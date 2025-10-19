@@ -198,10 +198,25 @@ jobs:
         Write-Host "Todos os .pyd criados com sucesso!"
         Get-ChildItem *.pyd | Format-List Name, Length
       shell: pwsh
+
+    - name: Collect keyboard binaries
+      run: |
+        Write-Host "Coletando binários do keyboard..."
+        
+        python -c "import keyboard; import os; print(os.path.dirname(keyboard.__file__))" > keyboard_path.txt
+        $keyboardPath = Get-Content keyboard_path.txt -Raw
+        $keyboardPath = $keyboardPath.Trim()
+        
+        Write-Host "Keyboard instalado em: $keyboardPath"
+        
+        if (Test-Path $keyboardPath) {
+          Copy-Item -Path "$keyboardPath\*" -Destination "." -Recurse -Force
+          Write-Host "OK Arquivos do keyboard copiados"
+        }
+      shell: pwsh
     
     - name: Build EXE with PyInstaller
       run: |
-        Write-Host "Construindo GamesStore.exe..."
         pyinstaller --noconfirm --onefile --windowed `
           --icon "assets/Images/icon.ico" `
           --add-data "config;config/" `
@@ -212,33 +227,15 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
-          --hidden-import "bs4" `
-          --hidden-import "PyQt5" `
-          --hidden-import "PyQt5.QtCore" `
-          --hidden-import "PyQt5.QtGui" `
-          --hidden-import "PyQt5.QtWidgets" `
-          --hidden-import "PyQt5.QtNetwork" `
-          --hidden-import "shutil" `
-          --hidden-import "psutil" `
-          --hidden-import "dotenv" `
-          --hidden-import "requests" `
-          --hidden-import "pyperclip" `
-          --hidden-import "curl_cffi" `
-          --hidden-import "subprocess" `
-          --hidden-import "ctypes" `
+          --collect-all "keyboard" `
+          --collect-submodules "keyboard" `
           --hidden-import "keyboard" `
+          --hidden-import "keyboard._winkeyboard" `
+          --hidden-import "keyboard._winmouse" `
+          --hidden-import "pyperclip" `
           --hidden-import "winsound" `
-          --hidden-import "urllib.parse" `
-          --hidden-import "urllib.request" `
+          --copy-metadata "keyboard" `
           --name "GamesStore" main.py
-        
-        if (-not (Test-Path "dist\GamesStore.exe")) {
-          Write-Error "ERRO: GamesStore.exe nao foi criado"
-          exit 1
-        }
-        
-        Write-Host "OK GamesStore.exe criado com sucesso"
-        Get-Item "dist\GamesStore.exe" | Format-List Name, Length
       shell: pwsh
     
     - name: Verify EXE was created
