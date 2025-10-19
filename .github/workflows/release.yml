@@ -6,10 +6,11 @@ on:
       - 'v*.*.*'
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
-  # ============================================
-  # JOB 1: UPLOAD DOS 3 ARQUIVOS
-  # ============================================
   upload-modules:
     runs-on: ubuntu-latest
     
@@ -31,30 +32,16 @@ jobs:
       id: check_modules
       run: |
         MISSING=""
-        
-        if [ ! -f "uxmod.py" ]; then
-          echo "ERRO: uxmod.py nao encontrado"
-          MISSING="$MISSING uxmod.py"
-        fi
-        
-        if [ ! -f "xcore.py" ]; then
-          echo "ERRO: xcore.py nao encontrado"
-          MISSING="$MISSING xcore.py"
-        fi
-        
-        if [ ! -f "datax.py" ]; then
-          echo "ERRO: datax.py nao encontrado"
-          MISSING="$MISSING datax.py"
-        fi
+        if [ ! -f "uxmod.py" ]; then MISSING="$MISSING uxmod.py"; fi
+        if [ ! -f "xcore.py" ]; then MISSING="$MISSING xcore.py"; fi
+        if [ ! -f "datax.py" ]; then MISSING="$MISSING datax.py"; fi
         
         if [ -n "$MISSING" ]; then
           echo "exists=false" >> $GITHUB_OUTPUT
-          echo "missing=$MISSING" >> $GITHUB_OUTPUT
           exit 1
         else
           echo "exists=true" >> $GITHUB_OUTPUT
           echo "OK Todos os modulos encontrados"
-          ls -lh uxmod.py xcore.py datax.py
         fi
     
     - name: Upload modules as artifacts
@@ -67,37 +54,7 @@ jobs:
           xcore.py
           datax.py
         retention-days: 90
-    
-    - name: Configure Git
-      if: steps.check_modules.outputs.exists == 'true'
-      run: |
-        git config user.name "github-actions[bot]"
-        git config user.email "github-actions[bot]@users.noreply.github.com"
-    
-    - name: Checkout branch
-      if: steps.check_modules.outputs.exists == 'true'
-      run: |
-        git fetch origin ${{ steps.get_branch.outputs.branch }}
-        git checkout ${{ steps.get_branch.outputs.branch }}
-    
-    - name: Remove modules from Git
-      if: steps.check_modules.outputs.exists == 'true'
-      run: |
-        echo "Removendo modulos do Git..."
-        
-        git rm --cached uxmod.py xcore.py datax.py 2>/dev/null || true
-        
-        if git diff --cached --quiet; then
-          echo "AVISO: Nenhum arquivo para remover"
-        else
-          git commit -m "chore: Remove modulos sensiveis apos upload [skip ci]"
-          git push origin ${{ steps.get_branch.outputs.branch }}
-          echo "OK Modulos removidos do repositorio"
-        fi
   
-  # ============================================
-  # JOB 2: BUILD E RELEASE
-  # ============================================
   build-release:
     runs-on: windows-latest
     needs: upload-modules
@@ -115,7 +72,6 @@ jobs:
     - name: Verify modules downloaded
       run: |
         $missing = @()
-        
         if (-not (Test-Path "uxmod.py")) { $missing += "uxmod.py" }
         if (-not (Test-Path "xcore.py")) { $missing += "xcore.py" }
         if (-not (Test-Path "datax.py")) { $missing += "datax.py" }
@@ -126,7 +82,6 @@ jobs:
         }
         
         Write-Host "OK Todos os modulos baixados"
-        Get-ChildItem uxmod.py, xcore.py, datax.py | Format-List Name, Length
       shell: pwsh
     
     - name: Set up Python
@@ -137,8 +92,13 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        pip install pyinstaller PyQt5 requests bs4 psutil python-dotenv curl-cffi
+        pip install pyinstaller PyQt5 requests bs4 psutil python-dotenv curl-cffi keyboard pyperclip
         pip install Cython setuptools
+        
+        Write-Host "Verificando instalacao do keyboard..."
+        python -c "import keyboard; print(f'Keyboard version: {keyboard.__version__}')"
+        python -c "import pyperclip; print('Pyperclip OK')"
+      shell: pwsh
     
     - name: Create config.py with secrets
       run: |
@@ -148,7 +108,6 @@ jobs:
         echo API_URL = "${{ secrets.API_URL }}" >> config.py
         echo API_URL_SITE = "${{ secrets.API_URL_SITE }}" >> config.py
         echo AUTH_CODE = "${{ secrets.AUTH_CODE }}" >> config.py
-        echo OK config.py created
       shell: cmd
     
     - name: Compile modules to .pyd files
@@ -156,67 +115,34 @@ jobs:
         Write-Host "Compilando modulos para .pyd..."
         python setup.py build_ext --inplace
         
-        # Verificar e renomear uxmod.pyd
         if (Test-Path -Path "uxmod.cp311-win_amd64.pyd") {
           Copy-Item "uxmod.cp311-win_amd64.pyd" "uxmod.pyd" -Force
-          Write-Host "OK uxmod.pyd criado"
         } elseif (Test-Path -Path "uxmod*.pyd") {
           $pydFile = Get-ChildItem -Filter "uxmod*.pyd" | Select-Object -First 1
           Copy-Item $pydFile.Name "uxmod.pyd" -Force
-          Write-Host "OK uxmod.pyd criado"
-        } else {
-          Write-Error "ERRO uxmod.pyd nao gerado"
-          exit 1
         }
         
-        # Verificar e renomear xcore.pyd
         if (Test-Path -Path "xcore.cp311-win_amd64.pyd") {
           Copy-Item "xcore.cp311-win_amd64.pyd" "xcore.pyd" -Force
-          Write-Host "OK xcore.pyd criado"
         } elseif (Test-Path -Path "xcore*.pyd") {
           $pydFile = Get-ChildItem -Filter "xcore*.pyd" | Select-Object -First 1
           Copy-Item $pydFile.Name "xcore.pyd" -Force
-          Write-Host "OK xcore.pyd criado"
-        } else {
-          Write-Error "ERRO xcore.pyd nao gerado"
-          exit 1
         }
         
-        # Verificar e renomear datax.pyd
         if (Test-Path -Path "datax.cp311-win_amd64.pyd") {
           Copy-Item "datax.cp311-win_amd64.pyd" "datax.pyd" -Force
-          Write-Host "OK datax.pyd criado"
         } elseif (Test-Path -Path "datax*.pyd") {
           $pydFile = Get-ChildItem -Filter "datax*.pyd" | Select-Object -First 1
           Copy-Item $pydFile.Name "datax.pyd" -Force
-          Write-Host "OK datax.pyd criado"
-        } else {
-          Write-Error "ERRO datax.pyd nao gerado"
-          exit 1
         }
         
-        Write-Host "Todos os .pyd criados com sucesso!"
+        Write-Host "Todos os .pyd criados!"
         Get-ChildItem *.pyd | Format-List Name, Length
-      shell: pwsh
-
-    - name: Collect keyboard binaries
-      run: |
-        Write-Host "Coletando binários do keyboard..."
-        
-        python -c "import keyboard; import os; print(os.path.dirname(keyboard.__file__))" > keyboard_path.txt
-        $keyboardPath = Get-Content keyboard_path.txt -Raw
-        $keyboardPath = $keyboardPath.Trim()
-        
-        Write-Host "Keyboard instalado em: $keyboardPath"
-        
-        if (Test-Path $keyboardPath) {
-          Copy-Item -Path "$keyboardPath\*" -Destination "." -Recurse -Force
-          Write-Host "OK Arquivos do keyboard copiados"
-        }
       shell: pwsh
     
     - name: Build EXE with PyInstaller
       run: |
+        Write-Host "Construindo GamesStore.exe..."
         pyinstaller --noconfirm --onefile --windowed `
           --icon "assets/Images/icon.ico" `
           --add-data "config;config/" `
@@ -232,33 +158,36 @@ jobs:
           --hidden-import "keyboard" `
           --hidden-import "keyboard._winkeyboard" `
           --hidden-import "keyboard._winmouse" `
+          --hidden-import "keyboard._generic" `
+          --hidden-import "keyboard._nixcommon" `
+          --hidden-import "keyboard._canonical_names" `
           --hidden-import "pyperclip" `
           --hidden-import "winsound" `
+          --hidden-import "bs4" `
+          --hidden-import "PyQt5.QtCore" `
+          --hidden-import "PyQt5.QtGui" `
+          --hidden-import "PyQt5.QtWidgets" `
+          --hidden-import "PyQt5.QtNetwork" `
+          --hidden-import "psutil" `
+          --hidden-import "requests" `
+          --hidden-import "curl_cffi" `
           --copy-metadata "keyboard" `
           --name "GamesStore" main.py
-      shell: pwsh
-    
-    - name: Verify EXE was created
-      run: |
-        if (Test-Path -Path "dist\GamesStore.exe") {
-          Write-Host "OK GamesStore.exe criado"
-          Get-Item "dist\GamesStore.exe" | Format-List Name, Length
-        } else {
-          Write-Error "ERRO GamesStore.exe nao gerado"
+        
+        if (-not (Test-Path "dist\GamesStore.exe")) {
+          Write-Error "ERRO: .exe nao criado"
           exit 1
         }
+        
+        Write-Host "OK GamesStore.exe criado"
+        Get-Item "dist\GamesStore.exe" | Format-List Name, Length
       shell: pwsh
     
     - name: Cleanup sensitive files
       run: |
         Remove-Item "config.py" -Force -ErrorAction SilentlyContinue
-        Remove-Item "uxmod.py" -Force -ErrorAction SilentlyContinue
-        Remove-Item "xcore.py" -Force -ErrorAction SilentlyContinue
-        Remove-Item "datax.py" -Force -ErrorAction SilentlyContinue
-        Remove-Item "uxmod.c" -Force -ErrorAction SilentlyContinue
-        Remove-Item "xcore.c" -Force -ErrorAction SilentlyContinue
-        Remove-Item "datax.c" -Force -ErrorAction SilentlyContinue
-        Write-Host "OK Cleanup concluido"
+        Remove-Item "*.py" -Force -ErrorAction SilentlyContinue
+        Remove-Item "*.c" -Force -ErrorAction SilentlyContinue
       shell: pwsh
     
     - name: Create Release

@@ -1,26 +1,13 @@
 import os
 import sys
-
-try:
-    import keyboard
-    import pyperclip
-    import winsound
-    print("[INFO] Dependências do uxmod carregadas com sucesso")
-except ImportError as e:
-    print(f"[ERRO] Dependência faltando: {e}")
-    if getattr(sys, 'frozen', False):
-        sys.path.insert(0, sys._MEIPASS)
-        import keyboard
-        import pyperclip
-        import winsound
-
-from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QColor
-from PyQt5.QtWidgets import QApplication
-from version import __version__
+import datax
+import xcore
 import updater
-
 from uxmod import softwarerei
+from PyQt5.QtGui import QColor
+from version import __version__
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtWidgets import QApplication
 
 def main():
     app = QApplication.instance() or QApplication(sys.argv)
