@@ -1,3 +1,12 @@
 [2025-10-19 13:47:06] Erro inesperado: Configuração de API não encontrada
 [2025-10-19 13:47:06] Download finalizado (cleanup)
 [2025-10-19 13:47:09] Erro no download: Erro inesperado: Configuração de API não encontrada
+[2025-10-19 13:57:52] Erro inesperado: Configuração de API não encontrada
+[2025-10-19 13:57:52] Download finalizado (cleanup)
+[2025-10-19 13:57:53] Erro no download: Erro inesperado: Configuração de API não encontrada
+[2025-10-19 14:00:04] Erro inesperado: Configuração de API não encontrada
+[2025-10-19 14:00:04] Download finalizado (cleanup)
+[2025-10-19 14:00:05] Erro no download: Erro inesperado: Configuração de API não encontrada
+[2025-10-19 14:03:04] Erro inesperado: Configuração de API não encontrada
+[2025-10-19 14:03:04] Download finalizado (cleanup)
+[2025-10-19 14:03:05] Erro no download: Erro inesperado: Configuração de API não encontrada

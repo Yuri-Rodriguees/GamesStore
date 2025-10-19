@@ -346,7 +346,6 @@ class LoginWorker(QRunnable):
 class softwarerei(QMainWindow):
     def __init__(self):
         super().__init__()
-        
         self.resize(730, 550)
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint)
         self.setStyleSheet(Styles.main_window)

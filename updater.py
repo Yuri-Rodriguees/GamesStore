@@ -8,7 +8,7 @@ from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 
 # versão inicial
 
-GITHUB_REPO = "Yuri-Rodriguees/GamesStoreKEY"
+GITHUB_REPO = "Yuri-Rodriguees/GamesStore"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
 
 def log(msg):
