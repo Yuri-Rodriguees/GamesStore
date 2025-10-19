@@ -202,7 +202,7 @@ jobs:
     - name: Build EXE with PyInstaller
       run: |
         Write-Host "Construindo GamesStore.exe..."
-        pyinstaller --noconfirm --onefile --windowed --icon "assets/Images/icon.ico" --add-data "config;config/" --add-data "config.py;." --add-data "version.py;." --add-data "updater.py;." --add-data "rc.py;." --add-data "uxmod.pyd;." --add-data "xcore.pyd;." --add-data "datax.pyd;." --hidden-import "bs4" --hidden-import "PyQt5" --hidden-import "shutil" --hidden-import "psutil" --hidden-import "dotenv" --hidden-import "requests" --hidden-import "curl_cffi" --hidden-import "subprocess" --hidden-import "ctypes" --hidden-import "urllib.parse" --hidden-import "urllib.request" --hidden-import "PyQt5.QtNetwork" --name "GamesStore" main.py
+        pyinstaller --noconfirm --onefile --windowed --icon "assets/Images/icon.ico" --add-data "config;config/" --add-data "config.py;." --add-data "version.py;." --add-data "updater.py;." --add-data "rc.py;." --add-data "uxmod.pyd;." --add-data "xcore.pyd;." --add-data "datax.pyd;." --hidden-import "bs4" --hidden-import "PyQt5" --hidden-import "shutil" --hidden-import "psutil" --hidden-import "dotenv" --hidden-import "requests" --hidden-import "keyboard" --hidden-import "curl_cffi" --hidden-import "subprocess" --hidden-import "ctypes" --hidden-import "urllib.parse" --hidden-import "urllib.request" --hidden-import "PyQt5.QtNetwork" --name "GamesStore" main.py
       shell: pwsh
     
     - name: Verify EXE was created
