@@ -2,13 +2,13 @@ import os
 import rc
 import sys
 import json
+import math
 import time
 import xcore
 import winreg
 import base64
 import psutil
 import hashlib
-import math
 import requests
 import keyboard
 import winsound
@@ -22,12 +22,12 @@ from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QSizePol
 from PyQt5.QtWidgets import QMainWindow, QLabel, QFrame, QLineEdit, QPushButton, QMessageBox
 from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, pyqtSignal, QObject, QPropertyAnimation, QEasingCurve, QPointF
 
-# Versão final
 
 class LoginWorkerSignals(QObject):
     success = pyqtSignal(str)
     error   = pyqtSignal(str)
     finished= pyqtSignal()
+
 
 class LoadingScreen(QWidget):
     error_signal = pyqtSignal(str) 
@@ -284,30 +284,38 @@ class LoadingScreen(QWidget):
                 self.parent_window_to_close.login_error(f"Falha ao iniciar: {e}")
             self.close()
 
+
 class LoginWorker(QRunnable):
+    """Worker para autenticação com validação de HWID"""
     def __init__(self, username, password, key_extract, parent):
         super().__init__()
         self.username = username
         self.password = password
-        self.key_extract = key_extract
+        self.hwid = key_extract
         self.parent = parent
         self.signals = LoginWorkerSignals()
 
     def run(self):
-        API_LOGIN_URL = 'https://gamestore.squareweb.app/api/login'
+        API_LOGIN_URL = 'https://gamestore.squareweb.app/api/login/desktop'
 
         try:
+            print(f"[LOGIN] Autenticando usuário: {self.username}")
+            print(f"[LOGIN] HWID: {self.hwid}")
+            
             payload = {
                 'email_ou_usuario': self.username,
-                'senha': self.password
+                'senha': self.password,
+                'hwid': self.hwid 
             }
 
-            response = requests.post(API_LOGIN_URL, json=payload)
+            response = requests.post(API_LOGIN_URL, json=payload, timeout=10)
             response_data = response.json()
+            
+            print(f"[LOGIN] Status Code: {response.status_code}")
+            print(f"[LOGIN] Resposta: {response_data}")
 
             if response.status_code == 200:
                 user_info = response_data.get('user')
-
                 validity_from_api = user_info.get('vencimento') if user_info else None
                 
                 if validity_from_api:
@@ -315,33 +323,52 @@ class LoginWorker(QRunnable):
                 else:
                     validity_to_emit = "permanente"
 
+                print(f"[LOGIN] Login bem-sucedido! Validade: {validity_to_emit}")
                 self.signals.success.emit(validity_to_emit)
 
             elif response.status_code == 400:
                 error_message = response_data.get('message', 'Requisição inválida.')
+                print(f"[LOGIN] Erro 400: {error_message}")
                 self.signals.error.emit(f'Erro de requisição: {error_message}')
                 
             elif response.status_code == 401:
                 error_message = response_data.get('message', 'Email/Usuário ou senha inválidos.')
-                self.signals.error.emit(f'Erro de autenticação: {error_message}')
+                print(f"[LOGIN] Erro 401: {error_message}")
+                self.signals.error.emit(f'{error_message}')
 
             elif response.status_code == 403:
-                error_message = response_data.get('message', 'Você não tem permissão para acessar.')
+                error_message = response_data.get('message', 'HWID não corresponde ou acesso negado.')
+                print(f"[LOGIN] Erro 403: {error_message}")
                 self.signals.error.emit(f'{error_message}')
                 
             elif response.status_code == 500:
                 error_message = response_data.get('message', 'Erro interno do servidor.')
+                print(f"[LOGIN] Erro 500: {error_message}")
                 self.signals.error.emit(f'Erro do servidor: {error_message}')
                 
             else:
-                self.signals.error.emit(f'{response_data.get("message", "Sem mensagem")}')
+                error_message = response_data.get('message', 'Erro desconhecido')
+                print(f"[LOGIN] Erro {response.status_code}: {error_message}")
+                self.signals.error.emit(f'{error_message}')
 
+        except requests.exceptions.Timeout:
+            print("[LOGIN] Timeout: Servidor não respondeu")
+            self.signals.error.emit('Timeout: Servidor não respondeu.')
+            
         except requests.exceptions.ConnectionError:
-            self.signals.error.emit('Não foi possível conectar ao servidor. Verifique a URL ou se o servidor está online.')
+            print("[LOGIN] Erro de conexão")
+            self.signals.error.emit('Erro de conexão. Verifique sua internet.')
+            
         except json.JSONDecodeError:
-            self.signals.error.emit('Resposta inválida do servidor (não é JSON).')
+            print("[LOGIN] Resposta não é JSON")
+            self.signals.error.emit('Resposta inválida do servidor.')
+            
         except Exception as e:
-            self.signals.error.emit(f'Erro inesperado durante a comunicação com a API: {e}')
+            print(f"[LOGIN] Erro inesperado: {e}")
+            import traceback
+            traceback.print_exc()
+            self.signals.error.emit(f'Erro: {e}')
+            
         finally:
             self.signals.finished.emit()
 
@@ -421,7 +448,6 @@ class softwarerei(QMainWindow):
     def get_point_on_perimeter(self, progress, rect):
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
         perimeter = 2 * (w + h)
-
         distance = progress * perimeter
 
         if distance < w:
@@ -449,14 +475,11 @@ class softwarerei(QMainWindow):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         rect = self.rect().adjusted(1, 1, -1, -1)
-
         animation_progress = self.pulse_angle / (math.pi * 2)
-
         end_progress = animation_progress
         start_progress = (animation_progress - self.tail_length) % 1.0
 
         path = QPainterPath()
-
         start_point = self.get_point_on_perimeter(start_progress, rect)
         path.moveTo(QPointF(start_point[0], start_point[1]))
 
@@ -476,7 +499,6 @@ class softwarerei(QMainWindow):
         transparent_color = self.gradient_color.toRgb()
         transparent_color.setAlpha(0)
         gradient.setColorAt(0.0, transparent_color)
-
         gradient.setColorAt(0.5, self.gradient_color)
         gradient.setColorAt(1.0, self.gradient_color)
 
@@ -490,13 +512,14 @@ class softwarerei(QMainWindow):
         super().paintEvent(event)
 
     def key(self):
+        """Gera HWID único do computador"""
         def get_disk_serial():
             try:
                 result = subprocess.check_output("wmic diskdrive get SerialNumber", shell=True)
                 serials = result.decode().split("\n")
                 serials = [s.strip() for s in serials if s.strip() and "SerialNumber" not in s]
                 return serials[0] if serials else "NO_DISK"
-            except Exception as e:
+            except Exception:
                 return "UNKNOWN_DISK"
 
         def get_mac_address():
@@ -509,7 +532,7 @@ class softwarerei(QMainWindow):
                         else:
                             if addr.family == 17 and addr.address != "00:00:00:00:00:00":
                                 return addr.address.replace(":", "")
-            except Exception as e:
+            except Exception:
                 return "UNKNOWN_MAC"
             return "UNKNOWN_MAC"
 
@@ -519,6 +542,7 @@ class softwarerei(QMainWindow):
         self.key_extract = hashlib.sha256(raw.encode()).hexdigest().upper()[:24]
 
     def generate_unique_code(self, checked=False):
+        """Copia HWID para clipboard (F1)"""
         self.key()
         unique_key = self.key_extract
         pyperclip.copy(unique_key)
@@ -528,17 +552,28 @@ class softwarerei(QMainWindow):
         self.frame_error_2.show()
 
     def on_login_clicked(self, checked=False):
+        """Executa login com validação de HWID"""
         self.login_button.setEnabled(False)
         self.login_button.setText("Autenticando...")
         
+        # Gerar HWID
         self.key()
-        campo_user = self.username_input.text()
-        campo_senha = self.password_input.text()
         
+        campo_user = self.username_input.text().strip()
+        campo_senha = self.password_input.text().strip()
+        
+        # Validações básicas
+        if not campo_user or not campo_senha:
+            self.show_message("Preencha todos os campos", success=False)
+            self.login_button.setEnabled(True)
+            self.login_button.setText("Login")
+            return
+        
+        # Criar worker com HWID
         worker = LoginWorker(
             username=campo_user,
             password=campo_senha,
-            key_extract=self.key_extract,
+            key_extract=self.key_extract,  # ✅ HWID enviado
             parent=self
         )
         
@@ -554,7 +589,6 @@ class softwarerei(QMainWindow):
         self.password_input.setStyleSheet(Styles.line_edit_ok)
 
         self.loading_screen = LoadingScreen(validity, parent_window=self)
-        
         self.loading_screen.show()
 
         screen_geometry = QApplication.primaryScreen().geometry()

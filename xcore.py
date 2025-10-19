@@ -1,4 +1,5 @@
 import os
+import stat
 import rc
 import re
 import sys
@@ -29,8 +30,7 @@ from PyQt5.QtWidgets import (QApplication, QWidget, QPushButton, QLabel, QVBoxLa
                              QFileDialog, QMessageBox, QGraphicsBlurEffect, QGraphicsColorizeEffect, 
                              QGraphicsOpacityEffect, QProgressBar, QGraphicsDropShadowEffect)
 
-# Versão final
-
+# Configurações
 try:
     from config import SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE
     print("[INFO] Configurações carregadas de config.py")
@@ -48,22 +48,13 @@ except ImportError:
 if getattr(sys, 'frozen', False):
     if not all([SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE]):
         print("[ERRO] Configurações não encontradas no executável!")
-        print(f"SECRET_KEY: {'OK' if SECRET_KEY else 'VAZIO'}")
-        print(f"API_URL: {'OK' if API_URL else 'VAZIO'}")
-        print(f"API_URL_SITE: {'OK' if API_URL_SITE else 'VAZIO'}")
-        print(f"AUTH_CODE: {'OK' if AUTH_CODE else 'VAZIO'}")
-else:
-    if not API_URL_SITE:
-        print("[AVISO] Modo desenvolvimento sem configurações")
-        print("[INFO] Para testar, configure variáveis de ambiente ou crie config.py")
 
 def get_safe_download_dir():
-    """Retorna diretório temporário do sistema (não polui Downloads)"""
+    """Retorna diretório temporário do sistema"""
     try:
         temp_base = Path(tempfile.gettempdir()) / "GameStore_Temp"
         temp_base.mkdir(parents=True, exist_ok=True)
         
-        # Testa permissões
         test_file = temp_base / ".test"
         test_file.touch()
         test_file.unlink()
@@ -71,8 +62,6 @@ def get_safe_download_dir():
         return temp_base
     except Exception as e:
         log_message(f"Erro ao usar temp: {e}")
-        
-        # Fallback: pasta do script
         script_dir = Path(__file__).parent / "temp_downloads"
         script_dir.mkdir(parents=True, exist_ok=True)
         return script_dir
@@ -86,22 +75,25 @@ def log_message(message):
             f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
         print(f"[LOG] {message}")
-        print(f"Erro ao escrever log: {e}")
 
 class DownloadWorkerSignals(QObject):
     """Sinais para comunicação do worker de download"""
-    progress = pyqtSignal(int)
-    success = pyqtSignal(str, str)
+    progress = pyqtSignal(int)  # Porcentagem (0-100)
+    speed = pyqtSignal(float)   # Velocidade em MB/s
+    downloaded = pyqtSignal(int, int)  # (baixado_MB, total_MB)
+    status = pyqtSignal(str)  # Texto de status (Baixando/Extraindo/Instalando)
+    success = pyqtSignal(str, str, str)  # (message, filepath, game_id)
     error = pyqtSignal(str)
     finished = pyqtSignal()
 
 class DownloadWorker(QRunnable):
-    """Worker responsável pelo download direto via API"""
-    def __init__(self, game_id, download_url=None, game_name=None):
+    """Worker responsável pelo download, extração e instalação"""
+    def __init__(self, game_id, download_url=None, game_name=None, steam_path=None):
         super().__init__()
         self.game_id = game_id
         self.download_url = download_url
         self.game_name = game_name
+        self.steam_path = steam_path
         self.signals = DownloadWorkerSignals()
         self._last_progress = 0
     
@@ -127,12 +119,16 @@ class DownloadWorker(QRunnable):
     
     @Slot()
     def run(self):
+        filepath = None
+        temp_dir = None
+        
         try:
-            # Se não tiver nome do jogo, buscar na Steam
+            # FASE 1: DOWNLOAD
+            self.signals.status.emit("Preparando download...")
+            
             if not self.game_name:
                 self.game_name = self.get_game_name_from_steam(self.game_id)
             
-            # Se não tiver URL de download, usar API direta
             if not self.download_url:
                 if not API_URL or not AUTH_CODE:
                     raise Exception("Configuração de API não encontrada")
@@ -140,7 +136,7 @@ class DownloadWorker(QRunnable):
                 self.download_url = f"{API_URL}?appid={self.game_id}&auth_code={AUTH_CODE}"
             
             log_message(f"Iniciando download: {self.game_name} (ID: {self.game_id})")
-            log_message(f"URL: {self.download_url}")
+            self.signals.status.emit(f"Baixando {self.game_name}...")
             
             headers = {
                 'Connection': 'keep-alive',
@@ -166,11 +162,9 @@ class DownloadWorker(QRunnable):
             elif 'rar' in content_type or 'rar' in content_disposition or 'x-rar' in content_type:
                 extension = '.rar'
             else:
-                # Fallback: detectar pelo Content-Length (grandes = RAR, pequenos = ZIP)
                 total_size = int(response.headers.get('content-length', 0))
-                extension = '.rar' if total_size > 100 * 1024 * 1024 else '.zip'  # > 100MB = RAR
+                extension = '.rar' if total_size > 100 * 1024 * 1024 else '.zip'
             
-            # Nome seguro do arquivo
             safe_name = re.sub(r'[<>:"/\\|?*]', '_', self.game_name)
             
             download_dir = get_safe_download_dir()
@@ -180,7 +174,6 @@ class DownloadWorker(QRunnable):
             
             log_message(f"Salvando em: {filepath}")
             
-            # Se arquivo existir, adicionar timestamp
             if filepath.exists():
                 try:
                     filepath.unlink()
@@ -195,6 +188,8 @@ class DownloadWorker(QRunnable):
             CHUNK_SIZE = 1024 * 1024  # 1MB chunks
             
             start_time = time.time()
+            last_update_time = start_time
+            last_downloaded = 0
             
             with open(filepath, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=CHUNK_SIZE):
@@ -202,54 +197,243 @@ class DownloadWorker(QRunnable):
                         f.write(chunk)
                         downloaded += len(chunk)
                         
+                        current_time = time.time()
+                        elapsed_since_last = current_time - last_update_time
+                        
+                        if elapsed_since_last >= 0.5:
+                            bytes_since_last = downloaded - last_downloaded
+                            speed_mbps = (bytes_since_last / (1024 * 1024)) / elapsed_since_last
+                            
+                            self.signals.speed.emit(speed_mbps)
+                            
+                            last_update_time = current_time
+                            last_downloaded = downloaded
+                        
                         if total_size > 0:
                             progress = int((downloaded / total_size) * 100)
                             
-                            # Emitir progresso apenas quando mudar
                             if progress != self._last_progress:
                                 self.signals.progress.emit(progress)
                                 self._last_progress = progress
+                            
+                            downloaded_mb = int(downloaded / (1024 * 1024))
+                            total_mb = int(total_size / (1024 * 1024))
+                            self.signals.downloaded.emit(downloaded_mb, total_mb)
             
             elapsed = time.time() - start_time
-            speed_mbps = (downloaded / (1024 * 1024)) / elapsed if elapsed > 0 else 0
+            avg_speed_mbps = (downloaded / (1024 * 1024)) / elapsed if elapsed > 0 else 0
             
             self.signals.progress.emit(100)
-            log_message(f"Download concluído em {elapsed:.2f}s ({speed_mbps:.2f} MB/s): {filepath}")
+            log_message(f"Download concluído em {elapsed:.2f}s ({avg_speed_mbps:.2f} MB/s): {filepath}")
             
-            self.signals.success.emit(
-                f"Download de '{self.game_name}' concluído!\nVelocidade: {speed_mbps:.2f} MB/s\nTamanho: {downloaded / (1024 * 1024):.2f} MB", 
-                str(filepath)
-            )
-            
-        except requests.exceptions.Timeout:
-            error_msg = "Timeout: Servidor não respondeu (30s)."
-            log_message(error_msg)
-            self.signals.error.emit(error_msg)
-            
-        except requests.exceptions.HTTPError as e:
-            if e.response.status_code == 404:
-                error_msg = f"Jogo ID {self.game_id} não encontrado no servidor."
-            elif e.response.status_code == 403:
-                error_msg = "Acesso negado. Verifique auth_code."
-            elif e.response.status_code == 401:
-                error_msg = "Não autorizado. Key pode estar expirada."
+            # FASE 2: EXTRAÇÃO E INSTALAÇÃO (se steam_path fornecido)
+            if self.steam_path:
+                self.signals.status.emit("Extraindo arquivos...")
+                self.signals.progress.emit(0)
+                
+                # Criar diretório temporário
+                temp_base = Path(tempfile.gettempdir()) / "GameStore_Extract"
+                temp_base.mkdir(parents=True, exist_ok=True)
+                temp_dir = temp_base / f"extract_{int(time.time())}"
+                temp_dir.mkdir(parents=True, exist_ok=True)
+                
+                log_message(f"Extraindo para: {temp_dir}")
+                
+                # Extrair baseado no formato
+                if str(filepath).lower().endswith('.zip'):
+                    with zipfile.ZipFile(filepath, 'r') as zip_ref:
+                        total_files = len(zip_ref.namelist())
+                        for i, file in enumerate(zip_ref.namelist()):
+                            zip_ref.extract(file, temp_dir)
+                            progress = int((i / total_files) * 100)
+                            self.signals.progress.emit(progress)
+                    log_message("Extração ZIP concluída")
+                
+                elif str(filepath).lower().endswith('.rar'):
+                    # Buscar WinRAR
+                    winrar_paths = [
+                        r"C:\Program Files\WinRAR\WinRAR.exe",
+                        r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
+                    ]
+                    
+                    winrar_path = None
+                    for path in winrar_paths:
+                        if os.path.exists(path):
+                            winrar_path = path
+                            break
+                    
+                    if not winrar_path:
+                        raise Exception("WinRAR não encontrado. Instale o WinRAR para extrair arquivos .rar")
+                    
+                    subprocess.run(
+                        [winrar_path, 'x', '-ibck', '-inul', str(filepath), str(temp_dir)],
+                        check=True,
+                        timeout=300
+                    )
+                    log_message("Extração RAR concluída")
+                
+                self.signals.progress.emit(100)
+                
+                self.signals.status.emit("Instalando arquivos do jogo...")
+                self.signals.progress.emit(0)
+                
+                extracted_game_id, extracted_game_name, moved_files = self.process_game_files(
+                    str(temp_dir), 
+                    self.steam_path
+                )
+                
+                self.register_game(extracted_game_name, extracted_game_id, moved_files)
+                
+                self.signals.progress.emit(100)
+                
+                self.signals.success.emit(
+                    f"{extracted_game_name} instalado com sucesso!\n"
+                    f"Velocidade média: {avg_speed_mbps:.2f} MB/s\n"
+                    f"Reinicie a Steam para ver o jogo.",
+                    str(filepath),
+                    extracted_game_id
+                )
+                
             else:
-                error_msg = f"Erro HTTP {e.response.status_code}: {e.response.reason}"
-            log_message(error_msg)
-            self.signals.error.emit(error_msg)
-            
-        except PermissionError as e:
-            error_msg = f"Erro de permissão ao salvar arquivo: {str(e)}"
-            log_message(error_msg)
-            self.signals.error.emit(error_msg)
+                self.signals.success.emit(
+                    f"Download de '{self.game_name}' concluído!\n"
+                    f"Velocidade média: {avg_speed_mbps:.2f} MB/s",
+                    str(filepath),
+                    self.game_id
+                )
             
         except Exception as e:
-            error_msg = f"Erro inesperado: {str(e)}"
+            error_msg = f"Erro: {str(e)}"
             log_message(error_msg)
+            import traceback
+            traceback.print_exc()
             self.signals.error.emit(error_msg)
             
         finally:
+            # Limpeza
+            try:
+                if temp_dir and temp_dir.exists():
+                    def remove_readonly(func, path, excinfo):
+                        os.chmod(path, stat.S_IWRITE)
+                        func(path)
+                    
+                    shutil.rmtree(temp_dir, onerror=remove_readonly)
+                    log_message("Diretório temporário removido")
+                
+                if filepath and os.path.exists(filepath):
+                    try:
+                        os.remove(filepath)
+                        log_message("Arquivo temporário removido")
+                    except:
+                        pass
+            except Exception as e:
+                log_message(f"Erro na limpeza: {e}")
+            
             self.signals.finished.emit()
+    
+    def process_game_files(self, source_dir, steam_path):
+        """Processa e move arquivos do jogo"""
+        game_id = None
+        game_name = None
+        
+        # Buscar na estrutura de pastas
+        for item in os.listdir(source_dir):
+            match = re.match(r"^(.*?)\s*\((\d+)\)$", item)
+            if match:
+                game_name = match.group(1).strip()
+                game_id = match.group(2)
+                log_message(f"ID encontrado: {game_name} ({game_id})")
+                break
+        
+        if not game_id:
+            # Buscar em arquivos .lua/.st
+            for root, _, files in os.walk(source_dir):
+                for file in files:
+                    if file.lower().endswith(('.lua', '.st')):
+                        match = re.search(r'(\d{5,7})', file)
+                        if match:
+                            game_id = match.group(1)
+                            game_name = self.game_name or 'jogo'
+                            log_message(f"ID encontrado em arquivo: {file} -> {game_id}")
+                            break
+                if game_id:
+                    break
+        
+        if not game_id:
+            raise ValueError("Não foi possível identificar o jogo no arquivo")
+        
+        # Criar diretórios da Steam
+        stplugin_dir = os.path.join(steam_path, "config", "stplug-in")
+        depotcache_dir = os.path.join(steam_path, "config", "depotcache")
+        StatsExport_dir = os.path.join(steam_path, "config", "StatsExport")
+        
+        os.makedirs(stplugin_dir, exist_ok=True)
+        os.makedirs(depotcache_dir, exist_ok=True)
+        os.makedirs(StatsExport_dir, exist_ok=True)
+        
+        moved_files = {
+            'lua': [],
+            'st': [],
+            'bin': [],
+            'manifests': []
+        }
+        
+        # Mover arquivos
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                
+                if file.lower().endswith('.lua'):
+                    dest_path = os.path.join(stplugin_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['lua'].append(file)
+                    
+                elif file.lower().endswith('.st'):
+                    dest_path = os.path.join(stplugin_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['st'].append(file)
+                    
+                elif file.lower().endswith('.bin'):
+                    dest_path = os.path.join(StatsExport_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['bin'].append(file)
+                    
+                elif file.lower().endswith('.manifest'):
+                    dest_path = os.path.join(depotcache_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['manifests'].append(file)
+        
+        total_moved = sum(len(files) for files in moved_files.values())
+        if total_moved == 0:
+            raise ValueError("Nenhum arquivo válido encontrado no pacote")
+        
+        log_message(f"Total de arquivos instalados: {total_moved}")
+        
+        return game_id, game_name, moved_files
+    
+    def register_game(self, game_name, game_id, moved_files):
+        """Registra o jogo instalado"""
+        try:
+            registry_path = Path(os.getenv('APPDATA')) / "GamesStore" / "game_registry.json"
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            registry = {}
+            if registry_path.exists():
+                with open(registry_path, 'r') as f:
+                    registry = json.load(f)
+            
+            registry[game_name] = {
+                "id": game_id,
+                "install_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "paths": moved_files
+            }
+            
+            with open(registry_path, 'w') as f:
+                json.dump(registry, f, indent=4)
+            
+            log_message(f"Jogo registrado: {game_name} (ID: {game_id})")
+        except Exception as e:
+            log_message(f"Erro ao registrar jogo: {e}")
 
 class SearchThread(QThread):
     """Thread para buscar jogos na Steam Store API"""
@@ -319,28 +503,25 @@ class TitleBar(QFrame):
 class CircularProgressBar(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(100, 100)
+        self.setFixedSize(120, 120)
         self._value = 0
+        self._speed = 0.0
+        self._downloaded = 0
+        self._total = 0
         self.max_value = 100
-        self.progress_width = 8
+        self.progress_width = 10
         self.progress_rounded_cap = True
         self.progress_color = QColor(75, 215, 100)
         self.text_color = QColor(255, 255, 255)
-        self.enable_shadow = True
-        self.font = QFont("Arial", 12)
+        self.font_percent = QFont("Arial", 14, QFont.Bold)
+        self.font_speed = QFont("Arial", 9)
         
         self.shadow_effect = QGraphicsDropShadowEffect(self)
-        self.shadow_effect.setBlurRadius(15)
+        self.shadow_effect.setBlurRadius(20)
         self.shadow_effect.setXOffset(0)
         self.shadow_effect.setYOffset(0)
-        self.shadow_effect.setColor(QColor(75, 215, 100, 120))
+        self.shadow_effect.setColor(QColor(75, 215, 100, 150))
         self.setGraphicsEffect(self.shadow_effect)
-        
-        self.animation = QPropertyAnimation(self, b"value")
-        self.animation.setDuration(500)
-        self.animation.setEasingCurve(QEasingCurve.OutQuad)
-        self.animation.setStartValue(0)
-        self.animation.setEndValue(self._value)
         
     @pyqtProperty(int)
     def value(self):
@@ -349,28 +530,23 @@ class CircularProgressBar(QWidget):
     @value.setter
     def value(self, value):
         if value != self._value:
-            self._value = value
+            self._value = max(0, min(value, self.max_value))
             self.update()
-
+    
     def set_value(self, value):
-        value = max(0, min(value, self.max_value))
-        
-        if abs(value - self._value) > 20 and self._value != 0:
-            self.animation.stop()
-            self.animation.setDuration(300)
-            self.animation.setStartValue(self._value)
-            self.animation.setEndValue(value)
-            self.animation.start()
-        else:
-            if self.animation.state() == QPropertyAnimation.Running:
-                current_value = self.animation.currentValue()
-                self.animation.stop()
-                self._value = current_value
-            
-            self.animation.setDuration(500)
-            self.animation.setStartValue(self._value)
-            self.animation.setEndValue(value)
-            self.animation.start()
+        """Define o progresso (0-100)"""
+        self.value = value
+    
+    def set_speed(self, speed):
+        """Define a velocidade em MB/s"""
+        self._speed = speed
+        self.update()
+    
+    def set_downloaded(self, downloaded, total):
+        """Define bytes baixados e total"""
+        self._downloaded = downloaded
+        self._total = total
+        self.update()
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -379,10 +555,12 @@ class CircularProgressBar(QWidget):
         side = min(self.width(), self.height())
         rect = QRectF(0, 0, side, side)
         
+        # Fundo
         painter.setPen(Qt.NoPen)
         painter.setBrush(QColor(40, 40, 40))
         painter.drawEllipse(rect)
         
+        # Progresso
         pen = QPen(self.progress_color, self.progress_width)
         if self.progress_rounded_cap:
             pen.setCapStyle(Qt.RoundCap)
@@ -400,9 +578,26 @@ class CircularProgressBar(QWidget):
         
         painter.drawArc(arc_rect, start_angle, span_angle)
         
-        painter.setFont(self.font)
+        # Texto - Porcentagem
+        painter.setFont(self.font_percent)
         painter.setPen(self.text_color)
-        painter.drawText(rect, Qt.AlignCenter, f"{self._value}%")
+        
+        percent_rect = QRectF(0, side * 0.35, side, side * 0.2)
+        painter.drawText(percent_rect, Qt.AlignCenter, f"{self._value}%")
+        
+        # Texto - Velocidade
+        if self._speed > 0:
+            painter.setFont(self.font_speed)
+            painter.setPen(QColor(200, 200, 200))
+            speed_rect = QRectF(0, side * 0.55, side, side * 0.15)
+            painter.drawText(speed_rect, Qt.AlignCenter, f"{self._speed:.1f} MB/s")
+        
+        # Texto - Tamanho
+        if self._total > 0:
+            painter.setFont(self.font_speed)
+            painter.setPen(QColor(180, 180, 180))
+            size_rect = QRectF(0, side * 0.68, side, side * 0.15)
+            painter.drawText(size_rect, Qt.AlignCenter, f"{self._downloaded}/{self._total} MB")
 
 class DownloadThread(QThread):
     progress_updated = pyqtSignal(int)
@@ -570,6 +765,43 @@ class GameApp(QWidget):
         self.update_game_list()
         
         QTimer.singleShot(0, self.get_steam_directory)
+    
+    def setup_help_menu(self):
+        """Adiciona menu de ajuda com opção de atualização (OPCIONAL)"""
+        try:
+            menubar = self.menuBar()
+            help_menu = menubar.addMenu('Ajuda')
+            
+            check_update_action = help_menu.addAction('Verificar Atualizações')
+            check_update_action.triggered.connect(self.check_for_updates_manually)
+            
+            about_action = help_menu.addAction('Sobre')
+            about_action.triggered.connect(self.show_about)
+            
+        except Exception as e:
+            print(f"Erro ao criar menu: {e}")
+    
+    def check_for_updates_manually(self):
+        """Verifica atualizações manualmente (quando usuário clicar)"""
+        try:
+            updater.check_and_update(self, show_no_update_message=True)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Erro",
+                f"Erro ao verificar atualizações:\n{str(e)}"
+            )
+    
+    def show_about(self):
+        """Mostra diálogo Sobre"""
+        QMessageBox.about(
+            self,
+            "Sobre Games Store KEY",
+            f"<h3>Games Store KEY</h3>"
+            f"<p>Versão: <b>{__version__}</b></p>"
+            f"<p>Sistema de gerenciamento de chaves de jogos</p>"
+            f"<p>© 2025 Games Store</p>"
+        )
         
     def start_search(self):
         self.search_timer.start()
@@ -590,6 +822,300 @@ class GameApp(QWidget):
         self.search_thread.error.connect(self.on_search_error)
         self.search_thread.start()
         
+    def on_download_progress(self, value):
+        """Atualiza progresso circular"""
+        print(f"[DEBUG] Progresso: {value}%")  # Debug
+        self.circular_progress.set_value(value)
+        self.progress_label.setText(f"Baixando... {value}%")
+
+    def on_download_speed(self, speed):
+        """Atualiza velocidade"""
+        print(f"[DEBUG] Velocidade: {speed:.2f} MB/s")  # Debug
+        self.circular_progress.set_speed(speed)
+
+    def on_download_size(self, downloaded, total):
+        """Atualiza tamanhos"""
+        print(f"[DEBUG] Tamanho: {downloaded}/{total} MB")  # Debug
+        self.circular_progress.set_downloaded(downloaded, total)
+
+    def on_download_success(self, message, filepath):
+        """Download concluído com sucesso"""
+        self.hide_progress_overlay()
+        
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle("Download Concluído")
+        msg_box.setText(message)
+        msg_box.setInformativeText(f"Arquivo salvo em:\n{filepath}")
+        
+        open_folder_btn = msg_box.addButton("Abrir Pasta", QMessageBox.ActionRole)
+        msg_box.addButton(QMessageBox.Ok)
+        
+        msg_box.exec_()
+        
+        if msg_box.clickedButton() == open_folder_btn:
+            folder_path = os.path.dirname(filepath)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(folder_path))
+
+    def on_download_error(self, error_message):
+        """Erro no download"""
+        self.hide_progress_overlay()
+        
+        QMessageBox.critical(
+            self,
+            "Erro no Download",
+            f"Falha ao baixar o jogo:\n\n{error_message}",
+            QMessageBox.Ok
+        )
+
+    def start_download(self, game_id, game_name):
+        """Inicia download, extração e instalação automáticos"""
+        
+        # Obter caminho da Steam
+        steam_path = self.get_steam_directory()
+        if not steam_path:
+            QMessageBox.critical(self, "Erro", "Steam não encontrada!")
+            return
+        
+        # Criar overlay
+        if not hasattr(self, 'overlay'):
+            self.create_progress_overlay()
+        
+        # Resetar valores
+        self.circular_progress.set_value(0)
+        self.circular_progress.set_speed(0)
+        self.circular_progress.set_downloaded(0, 0)
+        self.progress_label.setText(f"Baixando {game_name}...")
+        
+        # Mostrar overlay
+        self.show_progress_overlay(f"Iniciando download de {game_name}...")
+        
+        # Criar worker COM steam_path
+        worker = DownloadWorker(game_id, None, game_name, steam_path)
+        
+        # Conectar sinais
+        worker.signals.progress.connect(self.on_download_progress)
+        worker.signals.speed.connect(self.on_download_speed)
+        worker.signals.downloaded.connect(self.on_download_size)
+        worker.signals.status.connect(self.on_download_status)  # NOVO
+        worker.signals.success.connect(self.on_download_install_success)  # ALTERADO
+        worker.signals.error.connect(self.on_download_error)
+        worker.signals.finished.connect(self.on_download_finished)
+        
+        # Executar
+        QThreadPool.globalInstance().start(worker)
+        
+        print(f"[DEBUG] Download iniciado para {game_name} (ID: {game_id})")
+    
+    def on_download_status(self, status):
+        """Atualiza status textual (Baixando/Extraindo/Instalando)"""
+        print(f"[DEBUG] Status: {status}")
+        self.progress_label.setText(status)
+    
+    def on_download_install_success(self, message, filepath, game_id):
+        """Download, extração e instalação concluídos"""
+        self.hide_progress_overlay()
+        
+        # Atualizar lista de jogos instalados
+        self.update_game_list()
+        
+        # Mostrar mensagem de sucesso
+        msg_box = QMessageBox(self)
+        msg_box.setIcon(QMessageBox.Information)
+        msg_box.setWindowTitle("🎮 Instalação Concluída")
+        msg_box.setText(message)
+        msg_box.setStandardButtons(QMessageBox.Ok)
+        
+        msg_box.setStyleSheet("""
+            QMessageBox {
+                background-color: #2a2a2a;
+                color: white;
+            }
+            QMessageBox QLabel {
+                color: white;
+                font-size: 13px;
+            }
+            QPushButton {
+                background-color: #47D64E;
+                color: #1F1F1F;
+                border: none;
+                padding: 8px 20px;
+                font-size: 12px;
+                border-radius: 4px;
+                min-width: 80px;
+            }
+            QPushButton:hover {
+                background-color: #5ce36c;
+            }
+        """)
+        
+        msg_box.exec_()
+        
+        # Animação em etapas
+        self.animate_transition_to_games()
+        
+        log_message(f"Instalação concluída: {game_id}")
+
+    def animate_transition_to_games(self):
+        """Animação suave de transição para aba de jogos"""
+        # Passo 1: Processar eventos
+        QApplication.processEvents()
+        
+        # Passo 2: Mudar para aba de Jogos
+        self.pages.setCurrentIndex(1)
+        
+        # Passo 3: Processar eventos novamente
+        QApplication.processEvents()
+        
+        # Passo 4: Aguardar 300ms e fazer efeito visual no botão "Jogos"
+        QTimer.singleShot(300, lambda: self.highlight_games_button())
+        
+        # Passo 5: Aguardar 800ms e mostrar spotlight no refresh
+        QTimer.singleShot(800, lambda: self.show_spotlight_on_refresh())
+
+    def highlight_games_button(self):
+        """Destaca brevemente o botão de Jogos"""
+        # Salvar estilo original
+        original_style = self.btn_games.styleSheet()
+        
+        # Aplicar destaque temporário
+        self.btn_games.setStyleSheet("""
+            QPushButton {
+                background-color: #47D64E;
+                color: #1F1F1F;
+                padding: 10px;
+                font-size: 14px;
+                border-radius: 5px;
+                text-align: left;
+                border: 2px solid #5ce36c;
+            }
+        """)
+        
+        # Voltar ao estilo original após 500ms
+        QTimer.singleShot(500, lambda: self.btn_games.setStyleSheet(original_style))
+
+    def show_spotlight_on_refresh(self):
+        """Mostra spotlight no botão refresh"""
+        try:
+            if hasattr(self, 'btn_refresh'):
+                SpotlightOverlay(self, self.btn_refresh)
+        except Exception as e:
+            print(f"Erro ao mostrar spotlight: {e}")
+
+    def on_download_finished(self):
+        """Limpeza após download"""
+        print("[DEBUG] Download finalizado")
+
+    def update_game_list(self, checked=False):
+        try:
+            registry_path = self.get_registry_path()
+            if not registry_path:
+                raise Exception("Caminho do registro inválido")
+
+            self.game_list.setUpdatesEnabled(False)
+            self.game_list.clear()
+
+            installed_games = []
+
+            if os.path.exists(registry_path):
+                with open(registry_path, 'r') as f:
+                    registry = json.load(f)
+                    for game_name, game_data in registry.items():
+                        game_id = game_data.get("id", "")
+                        installed_games.append((game_name, game_id))
+
+            installed_games.sort(key=lambda x: x[0].lower())
+
+            for game_name, game_id in installed_games:
+                display_name = f"{game_name} ({game_id})"
+                self.game_list.addItem(display_name)
+
+            if self.game_list.count() == 0:
+                self.game_list.addItem("Nenhum jogo instalado")
+
+        except Exception as e:
+            print(f"Erro ao atualizar lista de jogos: {str(e)}")
+            QMessageBox.warning(self, "Erro", "Falha ao carregar lista de jogos instalados")
+        finally:
+            self.game_list.setUpdatesEnabled(True)
+            self.game_list.repaint()
+
+    def remove_game(self, checked=False):
+        selected_items = self.game_list.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Aviso", "Nenhum jogo selecionado para remover!")
+            return
+
+        steam_path = self.get_steam_directory()
+        if not steam_path:
+            QMessageBox.critical(self, "Erro", "Steam não encontrada!")
+            return
+
+        registry_path = self.get_registry_path()
+        if not registry_path:
+            QMessageBox.critical(self, "Erro", "Caminho do registro não encontrado!")
+            return
+
+        registry = {}
+        if os.path.exists(registry_path):
+            with open(registry_path, 'r') as f:
+                registry = json.load(f)
+
+        for item in selected_items:
+            game_name, game_id = self.extract_game_info(item.text())
+            if not game_id:
+                QMessageBox.warning(self, "Formato Inválido", f"'{item.text()}' não segue o padrão esperado!")
+                continue
+
+            try:
+                if game_name in registry:
+                    game_data = registry[game_name]
+                    actual_game_id = game_data.get("id", "")
+
+                    if actual_game_id != game_id:
+                        QMessageBox.warning(self, "Erro", f"ID do jogo não corresponde ao registro!")
+                        continue
+
+                    for file_type, files in game_data["paths"].items():
+                        dir_path = os.path.join(steam_path, "config",
+                                                "stplug-in" if file_type in ["lua", "st"] else
+                                                "StatsExport" if file_type == "bin" else
+                                                "depotcache")
+
+                        for file in files:
+                            file_path = os.path.join(dir_path, file)
+                            if os.path.exists(file_path):
+                                try:
+                                    os.remove(file_path)
+                                except Exception as e:
+                                    print(f"Erro ao remover {file_path}: {str(e)}")
+
+                if game_name in registry:
+                    del registry[game_name]
+                    with open(registry_path, 'w') as f:
+                        json.dump(registry, f, indent=4)
+
+                self.game_list.takeItem(self.game_list.row(item))
+                QMessageBox.information(self, "Sucesso", f"{game_name} removido com sucesso!\nReinicie sua Steam clicando no botão abaixo!")
+                QApplication.processEvents()
+                QTimer.singleShot(1000, lambda: SpotlightOverlay(self, self.btn_refresh))
+
+            except Exception as e:
+                QMessageBox.critical(self, "Erro", f"Falha ao remover {game_name}:\n{str(e)}")
+
+        self.update_game_list()
+            
+    def hide_progress_overlay(self):
+        """Esconde o overlay de progresso"""
+        if hasattr(self, 'overlay'):
+            self.overlay.hide()
+        
+        if hasattr(self, 'blur_overlay'):
+            self.blur_animation.setStartValue(10)
+            self.blur_animation.setEndValue(0)
+            self.blur_animation.finished.connect(lambda: self.blur_overlay.hide())
+            self.blur_animation.start()
+    
     def setup_blur_overlay(self):
         self.blur_overlay = QWidget(self)
         self.blur_overlay.setGeometry(0, 0, self.width(), self.height())
@@ -653,21 +1179,6 @@ class GameApp(QWidget):
         if abs(value - self.circular_progress.value) > 2 or value == 100:
             self.circular_progress.set_value(value)
 
-    def install_winrar(self, checked=False):
-        self.create_progress_overlay()
-        winrar_url = "https://www.rarlab.com/rar/winrar-x64-711br.exe"
-        temp_dir = tempfile.gettempdir()
-        installer_path = os.path.join(temp_dir, "winrar_installer.exe")
-        
-        self.pending_rar_file = self.selected_file_path
-        
-        self.show_progress_overlay("Baixando WinRAR...")
-        
-        self.download_thread = DownloadThread(winrar_url, installer_path)
-        self.download_thread.progress_updated.connect(lambda: self.update_progress_bar())
-        self.download_thread.download_complete.connect(lambda: self.on_winrar_download_complete())
-        self.download_thread.start()
-
     def on_download_complete(self, success, installer_path):
         if success:
             self.progress_label.setText("Instalando WinRAR...")
@@ -693,140 +1204,7 @@ class GameApp(QWidget):
                 QTimer.singleShot(3000, self.hide_progress_overlay)
         else:
             self.hide_progress_overlay()
-            
-    def check_winrar_installation(self, process, installer_path, steam_path):
-        if process.poll() is None:
-            return
-        
-        self.installation_check_timer.stop()
-        
-        try:
-            os.remove(installer_path)
-        except Exception as e:
-            print(f"Erro ao remover instalador: {str(e)}")
-        
-        if self.find_winrar():
-            self.progress_label.setText("WinRAR instalado com sucesso!")
-            
-            if hasattr(self, 'pending_rar_file') and self.pending_rar_file:
-                try:
-                    winrar_path = self.find_winrar()
-                    temp_dir = tempfile.mkdtemp()
-                    
-                    subprocess.run([
-                        winrar_path,
-                        'x',
-                        '-ibck',
-                        '-inul',
-                        self.pending_rar_file,
-                        temp_dir
-                    ], check=True)
-                    
-                    game_id, game_name, moved_files = self.process_game_files(temp_dir, steam_path)
-                    
-                    if game_id:
-                        self.register_installation(game_name, game_id, steam_path, moved_files)
-                        self.update_game_list()
-                    
-                    QMessageBox.information(self, "Sucesso", "Jogo instalado com sucesso!")
-                except subprocess.CalledProcessError as e:
-                    QMessageBox.critical(self, "Erro", f"Falha ao extrair arquivo RAR:\n{str(e)}")
-                except Exception as e:
-                    QMessageBox.critical(self, "Erro", f"Ocorreu um erro:\n{str(e)}")
-                finally:
-                    shutil.rmtree(temp_dir, ignore_errors=True)
-                    del self.pending_rar_file
-                    self._reset_file_selection()
-        else:
-            self.progress_label.setText("Falha na instalação do WinRAR")
-        
-        QTimer.singleShot(2000, self.hide_progress_overlay)
     
-    def hide_progress_overlay(self, checked=False):
-        self.blur_animation.setStartValue(10)
-        self.blur_animation.setEndValue(0)
-        self.blur_animation.finished.connect(lambda: (
-            self.overlay.hide(),
-            self.blur_overlay.hide()
-        ))
-        self.blur_animation.start()
-        
-    def on_winrar_download_complete(self, success):
-        if not success:
-            self.hide_progress_overlay()
-            QMessageBox.critical(self, "Erro", "Falha ao baixar o WinRAR")
-            return
-        
-        installer_path = self.download_thread.filename
-        
-        self.progress_label.setText("Solicitando permissões de administrador...")
-        self.circular_progress.set_value(100)
-        
-        try:
-            if os.name == 'nt':
-                result = ctypes.windll.shell32.ShellExecuteW(
-                    None, 
-                    "runas",
-                    installer_path,
-                    "/S",
-                    None,
-                    1
-                )
-                
-                if result <= 32:
-                    raise Exception(f"Falha ao solicitar elevação (código {result})")
-                
-                self.installation_check_timer = QTimer(self)
-                self.installation_check_timer.timeout.connect(
-                    lambda: self.check_winrar_installation(installer_path))
-                self.installation_check_timer.start(1000)
-                
-            else:
-                subprocess.run([installer_path, '/S'], check=True)
-                self.finalize_winrar_installation(installer_path)
-                
-        except Exception as e:
-            print(f"Erro na instalação: {str(e)}")
-            self.progress_label.setText(f"Erro: {str(e)}")
-            QTimer.singleShot(3000, self.hide_progress_overlay)
-
-    def check_winrar_installation(self, installer_path):
-        try:
-            process_name = os.path.basename(installer_path).lower()
-            
-            for proc in psutil.process_iter(['name']):
-                if proc.info['name'].lower() == process_name:
-                    return
-            
-            self.installation_check_timer.stop()
-            self.finalize_winrar_installation(installer_path)
-            
-        except Exception as e:
-            print(f"Erro ao verificar instalação: {str(e)}")
-            self.installation_check_timer.stop()
-            self.progress_label.setText("Instalação concluída")
-            QTimer.singleShot(2000, self.hide_progress_overlay)
-
-    def finalize_winrar_installation(self, installer_path):
-        try:
-            os.remove(installer_path)
-        except Exception as e:
-            print(f"Erro ao remover instalador: {str(e)}")
-        
-        if self.find_winrar():
-            self.progress_label.setText("WinRAR instalado com sucesso!")
-            QMessageBox.information(self, "Sucesso", "WinRAR instalado com sucesso!")
-            
-            if hasattr(self, 'pending_rar_file') and self.pending_rar_file:
-                self.selected_file_path = self.pending_rar_file
-                del self.pending_rar_file
-                self.install_game()
-        else:
-            self.progress_label.setText("Falha na instalação do WinRAR")
-            QMessageBox.warning(self, "Aviso", "A instalação do WinRAR pode não ter sido concluída com sucesso.")
-        
-        self.hide_progress_overlay()
-        
     def setup_home(self):
         layout = QVBoxLayout()
         lbl_home = QLabel("Bem-vindo ao Games Store!")
@@ -978,15 +1356,19 @@ class GameApp(QWidget):
         self.search_progress.hide()
     
     def on_image_clicked(self, event):
-        if hasattr(self, 'selected_game_id'):
+        """Clique na imagem do jogo inicia download direto"""
+        if hasattr(self, 'selected_game_id') and hasattr(self, 'selected_game_name'):
             reply = QMessageBox.question(
-                self, 'Confirmar Download',
-                f'Deseja baixar o jogo com ID {self.selected_game_id}?',
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
+                self,
+                "Confirmar Download",
+                f"Deseja baixar e instalar '{self.selected_game_name}'?\n\n"
+                f"O jogo será automaticamente instalado na sua Steam.",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No
             )
             
             if reply == QMessageBox.Yes:
-                self.start_download(self.selected_game_id)
+                self.start_download(self.selected_game_id, self.selected_game_name)
 
     def on_game_selected(self, item):
         selected_name = item.text()
@@ -997,32 +1379,6 @@ class GameApp(QWidget):
                 self.load_game_image(game['id'])
                 break
         self.list_widget.hide()
-
-    def start_download(self, game_id, game_name, download_url=None):
-        """
-        Inicia o download de um jogo usando QThreadPool + QRunnable
-        
-        Args:
-            game_id: ID do jogo (AppID da Steam)
-            game_name: Nome do jogo (opcional, busca na Steam se não fornecido)
-            download_url: URL de download direto (opcional, usa API se não fornecido)
-        """
-        self.show_progress_overlay(f"Iniciando download de {game_name}...")
-        
-        # Criar worker de download
-        worker = DownloadWorker(game_id, download_url, game_name)
-        
-        # Conectar sinais aos handlers
-        worker.signals.progress.connect(self.handle_download_progress)
-        worker.signals.success.connect(self.handle_download_complete)
-        worker.signals.error.connect(self.handle_download_error)
-        worker.signals.finished.connect(self.cleanup_download)
-        
-        # Armazenar referência ao worker (para cancelamento futuro, se necessário)
-        self.current_worker = worker
-        
-        # Executar no pool de threads global
-        QThreadPool.globalInstance().start(worker)
 
     def handle_download_progress(self, progress):
         """
@@ -1036,36 +1392,6 @@ class GameApp(QWidget):
         
         if hasattr(self, 'progress_label'):
             self.progress_label.setText(f"Baixando... {progress}%")
-
-    def handle_download_complete(self, message, filepath):
-        """
-        Chamado quando o download é concluído com sucesso
-        
-        Args:
-            message: Mensagem de sucesso com detalhes
-            filepath: Caminho completo do arquivo baixado
-        """
-        self.hide_progress_overlay()
-        
-        # Exibir mensagem de sucesso
-        msg_box = QMessageBox(self)
-        msg_box.setIcon(QMessageBox.Information)
-        msg_box.setWindowTitle("Download Concluído")
-        msg_box.setText(message)
-        msg_box.setInformativeText(f"Arquivo salvo em:\n{filepath}")
-        
-        # Botões: Abrir pasta e OK
-        open_folder_btn = msg_box.addButton("Abrir Pasta", QMessageBox.ActionRole)
-        msg_box.addButton(QMessageBox.Ok)
-        
-        msg_box.exec_()
-        
-        # Se usuário clicou em "Abrir Pasta"
-        if msg_box.clickedButton() == open_folder_btn:
-            folder_path = os.path.dirname(filepath)
-            QDesktopServices.openUrl(QUrl.fromLocalFile(folder_path))
-        
-        log_message(f"Download finalizado com sucesso: {filepath}")
 
     def handle_download_error(self, error_message):
         """
@@ -1108,38 +1434,7 @@ class GameApp(QWidget):
             
             self.hide_progress_overlay()
             log_message("Download cancelado pelo usuário")
-
-    def register_installation2(self, game_name, game_id, steam_path, moved_files):
-        registry_path = self.get_registry_path()
-        if not registry_path:
-            QMessageBox.critical(self, "Erro", "Não foi possível acessar o caminho do registro.")
-            return
-
-        registry = {}
-        if os.path.exists(registry_path):
-            with open(registry_path, 'r') as f:
-                registry = json.load(f)
-
-        registry[game_name] = {
-            "id": f"{game_id}",
-            "install_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "paths": moved_files
-        }
-
-        with open(registry_path, 'w') as f:
-            json.dump(registry, f, indent=4)
             
-    def on_image_clicked(self, event):
-        if hasattr(self, 'selected_game_id') and hasattr(self, 'selected_game_name'):
-            reply = QMessageBox.question(
-                self, 'Confirmar Download',
-                f'Deseja baixar o jogo {self.selected_game_name}?',
-                QMessageBox.Yes | QMessageBox.No, QMessageBox.No
-            )
-            
-            if reply == QMessageBox.Yes:
-                self.start_download(self.selected_game_id, self.selected_game_name)
-
     def on_game_selected(self, item):
         selected_name = item.text()
         for game in self.games:
@@ -1355,124 +1650,11 @@ class GameApp(QWidget):
         self.selected_file_label.setText(f"Arquivo selecionado: {file_name}")
         self.selected_file_label.setStyleSheet("color: #4CAF50; font-size: 12px;")
 
-    def install_game(self, checked=False):
-        if not self.selected_file_path:
-            QMessageBox.warning(self, "Aviso", "Nenhum arquivo selecionado!")
-            return
-            
-        steam_path = self.get_steam_directory()
-        if not steam_path:
-            QMessageBox.critical(self, "Erro", "Não foi possível encontrar o diretório da Steam!")
-            return
-        
-        self.steam_path_label.setText(steam_path)
-        
-        try:
-            if os.path.isfile(self.selected_file_path):
-                if self.selected_file_path.lower().endswith('.zip'):
-                    with zipfile.ZipFile(self.selected_file_path, 'r') as zip_ref:
-                        temp_dir = tempfile.mkdtemp()
-                        zip_ref.extractall(temp_dir)
-                        
-                        game_id, game_name, moved_files = self.process_game_files(temp_dir, steam_path)
-                        
-                        if game_id:
-                            self.register_installation(game_name, game_id, steam_path, moved_files)
-                            self.update_game_list()
-                        
-                        shutil.rmtree(temp_dir)
-                        
-                        self._reset_file_selection()
-                
-                    QMessageBox.information(self, "Sucesso", "Jogo instalado com sucesso!")
-                    
-                elif self.selected_file_path.lower().endswith('.rar'):
-                    winrar_path = self.find_winrar()
-                    if not winrar_path:
-                        reply = QMessageBox.question(
-                            self, 'WinRAR Não Encontrado',
-                            'O WinRAR é necessário para extrair arquivos RAR. Deseja instalar agora?\n\n'
-                            'O instalador será baixado do site oficial rarlab.com',
-                            QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes
-                        )
-                        if reply == QMessageBox.Yes:
-                            self.install_winrar()
-                            return
-                        else:
-                            QMessageBox.information(
-                                self, 
-                                "Instalação Cancelada",
-                                "Você pode instalar o WinRAR manualmente e tentar novamente."
-                            )
-                            return
-                    
-                    temp_dir = tempfile.mkdtemp()
-                    try:
-                        subprocess.run([
-                            winrar_path,
-                            'x',
-                            '-ibck',
-                            '-inul',
-                            self.selected_file_path,
-                            temp_dir
-                        ], check=True)
-                        
-                        game_id, game_name, moved_files = self.process_game_files(temp_dir, steam_path)
-                        
-                        if game_id:
-                            self.register_installation(game_name, game_id, steam_path, moved_files)
-                            self.update_game_list()
-                        
-                        QMessageBox.information(self, "Sucesso", "Jogo instalado com sucesso!")
-                    finally:
-                        shutil.rmtree(temp_dir, ignore_errors=True)
-                        self._reset_file_selection()
-            
-            elif os.path.isdir(self.selected_file_path):
-                game_id, game_name, moved_files = self.process_game_files(self.selected_file_path, steam_path)
-                if game_id:
-                    self.register_installation(game_name, game_id, steam_path, moved_files)
-                    self.update_game_list()
-                QMessageBox.information(self, "Sucesso", "Jogo instalado com sucesso!")
-                self._reset_file_selection()
-                
-            else:
-                QMessageBox.warning(self, "Aviso", "Formato de arquivo não suportado!")
-            
-        except subprocess.CalledProcessError as e:
-            QMessageBox.critical(self, "Erro", f"Falha ao extrair arquivo RAR:\nCertifique-se que o WinRAR está instalado\n{str(e)}")
-        except Exception as e:
-            QMessageBox.critical(self, "Erro", f"Ocorreu um erro durante a instalação:\n{str(e)}")
-
-        if game_name:
-            QMessageBox.information(self, "Sucesso", f"{game_name} - Reinicie sua Steam clicando no botão abaixo!")
-            QApplication.processEvents()
-            QTimer.singleShot(1000, lambda: SpotlightOverlay(self, self.btn_refresh))
-
     def _reset_file_selection(self, checked=False):
         self.selected_file_path = None
         self.selected_file_label.setText("Nenhum arquivo selecionado")
         self.selected_file_label.setStyleSheet("color: #FF0000; font-size: 12px;")
-            
-    def find_winrar(self, checked=False):
-        winrar_paths = [
-            r"C:\Program Files\WinRAR\WinRAR.exe",
-            r"C:\Program Files (x86)\WinRAR\WinRAR.exe",
-            r"C:\Program Files\WinRAR\Rar.exe",
-            r"C:\Program Files (x86)\WinRAR\Rar.exe"
-        ]
-        
-        winrar_in_path = shutil.which("WinRAR.exe") or shutil.which("Rar.exe")
-        
-        for path in winrar_paths:
-            if os.path.exists(path):
-                return path
-        
-        if winrar_in_path:
-            return winrar_in_path
-        
-        return None
-    
+                
     def extract_game_info(self, folder_name):
         match = re.match(r"^(.*?)\s*\((\d+)\)$", folder_name)
         if match:
@@ -1594,125 +1776,6 @@ class GameApp(QWidget):
         os.makedirs(games_store_path, exist_ok=True)
 
         return os.path.join(games_store_path, "game_registry.json")
-
-    def register_installation(self, game_name, game_id, steam_path, moved_files):
-        registry_path = self.get_registry_path()
-        if not registry_path:
-            QMessageBox.critical(self, "Erro", "Não foi possível acessar o caminho do registro.")
-            return
-
-        registry = {}
-        if os.path.exists(registry_path):
-            with open(registry_path, 'r') as f:
-                registry = json.load(f)
-
-        registry[game_name] = {
-            "id": game_id,
-            "install_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
-            "paths": moved_files
-        }
-
-        with open(registry_path, 'w') as f:
-            json.dump(registry, f, indent=4)
-
-    def update_game_list(self, checked=False):
-        try:
-            registry_path = self.get_registry_path()
-            if not registry_path:
-                raise Exception("Caminho do registro inválido")
-
-            self.game_list.setUpdatesEnabled(False)
-            self.game_list.clear()
-
-            installed_games = []
-
-            if os.path.exists(registry_path):
-                with open(registry_path, 'r') as f:
-                    registry = json.load(f)
-                    for game_name, game_data in registry.items():
-                        game_id = game_data.get("id", "")
-                        installed_games.append((game_name, game_id))
-
-            installed_games.sort(key=lambda x: x[0].lower())
-
-            for game_name, game_id in installed_games:
-                display_name = f"{game_name} ({game_id})"
-                self.game_list.addItem(display_name)
-
-            if self.game_list.count() == 0:
-                self.game_list.addItem("Nenhum jogo instalado")
-
-        except Exception as e:
-            print(f"Erro ao atualizar lista de jogos: {str(e)}")
-            QMessageBox.warning(self, "Erro", "Falha ao carregar lista de jogos instalados")
-        finally:
-            self.game_list.setUpdatesEnabled(True)
-            self.game_list.repaint()
-
-    def remove_game(self, checked=False):
-        selected_items = self.game_list.selectedItems()
-        if not selected_items:
-            QMessageBox.warning(self, "Aviso", "Nenhum jogo selecionado para remover!")
-            return
-
-        steam_path = self.get_steam_directory()
-        if not steam_path:
-            QMessageBox.critical(self, "Erro", "Steam não encontrada!")
-            return
-
-        registry_path = self.get_registry_path()
-        if not registry_path:
-            QMessageBox.critical(self, "Erro", "Caminho do registro não encontrado!")
-            return
-
-        registry = {}
-        if os.path.exists(registry_path):
-            with open(registry_path, 'r') as f:
-                registry = json.load(f)
-
-        for item in selected_items:
-            game_name, game_id = self.extract_game_info(item.text())
-            if not game_id:
-                QMessageBox.warning(self, "Formato Inválido", f"'{item.text()}' não segue o padrão esperado!")
-                continue
-
-            try:
-                if game_name in registry:
-                    game_data = registry[game_name]
-                    actual_game_id = game_data.get("id", "")
-
-                    if actual_game_id != game_id:
-                        QMessageBox.warning(self, "Erro", f"ID do jogo não corresponde ao registro!")
-                        continue
-
-                    for file_type, files in game_data["paths"].items():
-                        dir_path = os.path.join(steam_path, "config",
-                                                "stplug-in" if file_type in ["lua", "st"] else
-                                                "StatsExport" if file_type == "bin" else
-                                                "depotcache")
-
-                        for file in files:
-                            file_path = os.path.join(dir_path, file)
-                            if os.path.exists(file_path):
-                                try:
-                                    os.remove(file_path)
-                                except Exception as e:
-                                    print(f"Erro ao remover {file_path}: {str(e)}")
-
-                if game_name in registry:
-                    del registry[game_name]
-                    with open(registry_path, 'w') as f:
-                        json.dump(registry, f, indent=4)
-
-                self.game_list.takeItem(self.game_list.row(item))
-                QMessageBox.information(self, "Sucesso", f"{game_name} removido com sucesso!\nReinicie sua Steam clicando no botão abaixo!")
-                QApplication.processEvents()
-                QTimer.singleShot(1000, lambda: SpotlightOverlay(self, self.btn_refresh))
-
-            except Exception as e:
-                QMessageBox.critical(self, "Erro", f"Falha ao remover {game_name}:\n{str(e)}")
-
-        self.update_game_list()
 
     def get_steam_directory(self, checked=False):
         try:
@@ -1886,6 +1949,164 @@ class GameApp(QWidget):
     def mouseReleaseEvent(self, event):
         self.old_pos = None
 
+    def find_winrar(self, checked=False):
+        winrar_paths = [
+            r"C:\Program Files\WinRAR\WinRAR.exe",
+            r"C:\Program Files (x86)\WinRAR\WinRAR.exe",
+            r"C:\Program Files\WinRAR\Rar.exe",
+            r"C:\Program Files (x86)\WinRAR\Rar.exe"
+        ]
+        
+        winrar_in_path = shutil.which("WinRAR.exe") or shutil.which("Rar.exe")
+        
+        for path in winrar_paths:
+            if os.path.exists(path):
+                return path
+        
+        if winrar_in_path:
+            return winrar_in_path
+        
+        return None
+    
+    def install_winrar(self, checked=False):
+        self.create_progress_overlay()
+        winrar_url = "https://www.rarlab.com/rar/winrar-x64-711br.exe"
+        temp_dir = tempfile.gettempdir()
+        installer_path = os.path.join(temp_dir, "winrar_installer.exe")
+        
+        self.pending_rar_file = self.selected_file_path
+        
+        self.show_progress_overlay("Baixando WinRAR...")
+        
+        self.download_thread = DownloadThread(winrar_url, installer_path)
+        self.download_thread.progress_updated.connect(lambda: self.update_progress_bar())
+        self.download_thread.download_complete.connect(lambda: self.on_winrar_download_complete())
+        self.download_thread.start()
+                  
+    def check_winrar_installation(self, process, installer_path, steam_path):
+        if process.poll() is None:
+            return
+        
+        self.installation_check_timer.stop()
+        
+        try:
+            os.remove(installer_path)
+        except Exception as e:
+            print(f"Erro ao remover instalador: {str(e)}")
+        
+        if self.find_winrar():
+            self.progress_label.setText("WinRAR instalado com sucesso!")
+            
+            if hasattr(self, 'pending_rar_file') and self.pending_rar_file:
+                try:
+                    winrar_path = self.find_winrar()
+                    temp_dir = tempfile.mkdtemp()
+                    
+                    subprocess.run([
+                        winrar_path,
+                        'x',
+                        '-ibck',
+                        '-inul',
+                        self.pending_rar_file,
+                        temp_dir
+                    ], check=True)
+                    
+                    game_id, game_name, moved_files = self.process_game_files(temp_dir, steam_path)
+                    
+                    if game_id:
+                        self.register_installation(game_name, game_id, steam_path, moved_files)
+                        self.update_game_list()
+                    
+                    QMessageBox.information(self, "Sucesso", "Jogo instalado com sucesso!")
+                except subprocess.CalledProcessError as e:
+                    QMessageBox.critical(self, "Erro", f"Falha ao extrair arquivo RAR:\n{str(e)}")
+                except Exception as e:
+                    QMessageBox.critical(self, "Erro", f"Ocorreu um erro:\n{str(e)}")
+                finally:
+                    shutil.rmtree(temp_dir, ignore_errors=True)
+                    del self.pending_rar_file
+                    self._reset_file_selection()
+        else:
+            self.progress_label.setText("Falha na instalação do WinRAR")
+        
+        QTimer.singleShot(2000, self.hide_progress_overlay)
+        
+    def on_winrar_download_complete(self, success):
+        if not success:
+            self.hide_progress_overlay()
+            QMessageBox.critical(self, "Erro", "Falha ao baixar o WinRAR")
+            return
+        
+        installer_path = self.download_thread.filename
+        
+        self.progress_label.setText("Solicitando permissões de administrador...")
+        self.circular_progress.set_value(100)
+        
+        try:
+            if os.name == 'nt':
+                result = ctypes.windll.shell32.ShellExecuteW(
+                    None, 
+                    "runas",
+                    installer_path,
+                    "/S",
+                    None,
+                    1
+                )
+                
+                if result <= 32:
+                    raise Exception(f"Falha ao solicitar elevação (código {result})")
+                
+                self.installation_check_timer = QTimer(self)
+                self.installation_check_timer.timeout.connect(
+                    lambda: self.check_winrar_installation(installer_path))
+                self.installation_check_timer.start(1000)
+                
+            else:
+                subprocess.run([installer_path, '/S'], check=True)
+                self.finalize_winrar_installation(installer_path)
+                
+        except Exception as e:
+            print(f"Erro na instalação: {str(e)}")
+            self.progress_label.setText(f"Erro: {str(e)}")
+            QTimer.singleShot(3000, self.hide_progress_overlay)
+
+    def check_winrar_installation(self, installer_path):
+        try:
+            process_name = os.path.basename(installer_path).lower()
+            
+            for proc in psutil.process_iter(['name']):
+                if proc.info['name'].lower() == process_name:
+                    return
+            
+            self.installation_check_timer.stop()
+            self.finalize_winrar_installation(installer_path)
+            
+        except Exception as e:
+            print(f"Erro ao verificar instalação: {str(e)}")
+            self.installation_check_timer.stop()
+            self.progress_label.setText("Instalação concluída")
+            QTimer.singleShot(2000, self.hide_progress_overlay)
+
+    def finalize_winrar_installation(self, installer_path):
+        try:
+            os.remove(installer_path)
+        except Exception as e:
+            print(f"Erro ao remover instalador: {str(e)}")
+        
+        if self.find_winrar():
+            self.progress_label.setText("WinRAR instalado com sucesso!")
+            QMessageBox.information(self, "Sucesso", "WinRAR instalado com sucesso!")
+            
+            if hasattr(self, 'pending_rar_file') and self.pending_rar_file:
+                self.selected_file_path = self.pending_rar_file
+                del self.pending_rar_file
+                self.install_game()
+        else:
+            self.progress_label.setText("Falha na instalação do WinRAR")
+            QMessageBox.warning(self, "Aviso", "A instalação do WinRAR pode não ter sido concluída com sucesso.")
+        
+        self.hide_progress_overlay()
+        
 def start_software():
     window = GameApp()
     window.show()

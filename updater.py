@@ -94,7 +94,6 @@ def check_for_updates():
         log(f"ERRO INESPERADO: {e}")
         return False, None, None, None
 
-
 class UpdateDownloader(QThread):
     """Thread para baixar a atualização em background"""
     progress = pyqtSignal(int)
@@ -119,7 +118,7 @@ class UpdateDownloader(QThread):
             log(f"Tamanho: {total_size / 1024 / 1024:.2f} MB")
             
             temp_dir = tempfile.gettempdir()
-            temp_file = os.path.join(temp_dir, "SteamPassKEY_Update.exe")
+            temp_file = os.path.join(temp_dir, "GamesStore_Update.exe")
             
             with open(temp_file, 'wb') as f:
                 for chunk in response.iter_content(chunk_size=8192):
@@ -144,7 +143,6 @@ class UpdateDownloader(QThread):
     
     def stop(self):
         self._is_running = False
-
 
 class ModernUpdateDialog(QDialog):
     """Diálogo moderno de atualização"""
@@ -226,7 +224,6 @@ class ModernUpdateDialog(QDialog):
         
         self.setLayout(layout)
 
-
 class ModernProgressDialog(QDialog):
     """Diálogo moderno de progresso"""
     
@@ -283,7 +280,6 @@ class ModernProgressDialog(QDialog):
         else:
             self.status_label.setText("Instalando atualização...")
 
-
 def perform_update(parent, download_url):
     """Baixa e instala a atualização"""
     log("Iniciando processo de atualização")
@@ -314,7 +310,6 @@ def perform_update(parent, download_url):
     
     return downloader
 
-
 def install_update(temp_file, progress_dialog):
     """Instala a atualização e reinicia"""
     log("Instalando atualização")
@@ -343,7 +338,6 @@ exit
     subprocess.Popen(batch_file, shell=True)
     sys.exit(0)
 
-
 def check_and_update(parent, show_no_update_message=False):
     """Função principal - Atualização obrigatória se disponível"""
     
@@ -351,7 +345,6 @@ def check_and_update(parent, show_no_update_message=False):
     
     if not has_update:
         if show_no_update_message:
-            # Mostra mensagem diferente se estiver em desenvolvimento
             if not is_frozen():
                 QMessageBox.information(
                     parent,

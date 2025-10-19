@@ -10,3 +10,96 @@
 [2025-10-19 14:03:04] Erro inesperado: Configuração de API não encontrada
 [2025-10-19 14:03:04] Download finalizado (cleanup)
 [2025-10-19 14:03:05] Erro no download: Erro inesperado: Configuração de API não encontrada
+[2025-10-19 15:38:24] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 15:38:28] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:38:36] Download concluído em 8.51s (2.63 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:38:36] Download finalizado (cleanup)
+[2025-10-19 15:38:41] Download finalizado com sucesso: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:42:26] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 15:42:31] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:42:33] Download concluído em 2.17s (10.31 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:56:50] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 15:56:54] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:56:56] Download concluído em 2.06s (10.84 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:56:56] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760900216
+[2025-10-19 15:56:56] Extração ZIP concluída
+[2025-10-19 15:56:56] ID encontrado em arquivo: 1593500.lua -> 1593500
+[2025-10-19 15:56:56] Total de arquivos instalados: 2
+[2025-10-19 15:56:56] Jogo registrado: God of War (ID: 1593500)
+[2025-10-19 15:56:56] Diretório temporário removido
+[2025-10-19 15:56:56] Arquivo temporário removido
+[2025-10-19 15:58:46] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 15:58:50] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:58:55] Download concluído em 4.98s (4.49 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:58:55] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760900335
+[2025-10-19 15:58:55] Extração ZIP concluída
+[2025-10-19 15:58:55] ID encontrado em arquivo: 1593500.lua -> 1593500
+[2025-10-19 15:58:55] Total de arquivos instalados: 2
+[2025-10-19 15:58:55] Jogo registrado: God of War (ID: 1593500)
+[2025-10-19 15:58:55] Diretório temporário removido
+[2025-10-19 15:58:55] Arquivo temporário removido
+[2025-10-19 15:59:43] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 15:59:46] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:59:48] Download concluído em 1.87s (11.96 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 15:59:48] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760900388
+[2025-10-19 15:59:48] Extração ZIP concluída
+[2025-10-19 15:59:48] ID encontrado em arquivo: 1593500.lua -> 1593500
+[2025-10-19 15:59:48] Total de arquivos instalados: 2
+[2025-10-19 15:59:48] Jogo registrado: God of War (ID: 1593500)
+[2025-10-19 15:59:48] Diretório temporário removido
+[2025-10-19 15:59:48] Arquivo temporário removido
+[2025-10-19 16:01:44] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 16:01:51] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 16:01:53] Download concluído em 1.88s (11.89 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 16:01:53] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760900513
+[2025-10-19 16:01:53] Extração ZIP concluída
+[2025-10-19 16:01:53] ID encontrado em arquivo: 1593500.lua -> 1593500
+[2025-10-19 16:01:53] Total de arquivos instalados: 2
+[2025-10-19 16:01:53] Jogo registrado: God of War (ID: 1593500)
+[2025-10-19 16:01:53] Diretório temporário removido
+[2025-10-19 16:01:53] Arquivo temporário removido
+[2025-10-19 16:12:15] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 16:12:19] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 16:12:26] Download concluído em 7.60s (2.94 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 16:12:26] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760901146
+[2025-10-19 16:12:26] Extração ZIP concluída
+[2025-10-19 16:12:26] ID encontrado em arquivo: 1593500.lua -> 1593500
+[2025-10-19 16:12:26] Total de arquivos instalados: 2
+[2025-10-19 16:12:26] Jogo registrado: God of War (ID: 1593500)
+[2025-10-19 16:12:26] Erro: 'DownloadWorker' object has no attribute 'btn_games'
+[2025-10-19 16:12:26] Diretório temporário removido
+[2025-10-19 16:12:26] Arquivo temporário removido
+[2025-10-19 16:12:30] Instalação concluída: 1593500
+[2025-10-19 16:15:31] Iniciando download: God of War (ID: 1593500)
+[2025-10-19 16:15:33] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 16:15:35] Download concluído em 1.88s (11.92 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War (1593500).zip
+[2025-10-19 16:15:35] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760901335
+[2025-10-19 16:15:35] Extração ZIP concluída
+[2025-10-19 16:15:35] ID encontrado em arquivo: 1593500.lua -> 1593500
+[2025-10-19 16:15:35] Total de arquivos instalados: 2
+[2025-10-19 16:15:35] Jogo registrado: God of War (ID: 1593500)
+[2025-10-19 16:15:35] Diretório temporário removido
+[2025-10-19 16:15:35] Arquivo temporário removido
+[2025-10-19 16:15:36] Instalação concluída: 1593500
+[2025-10-19 16:21:26] Iniciando download: God of War Ragnarök (ID: 2322010)
+[2025-10-19 16:21:31] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War Ragnarök (2322010).zip
+[2025-10-19 16:21:35] Download concluído em 3.20s (2.74 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War Ragnarök (2322010).zip
+[2025-10-19 16:21:35] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760901695
+[2025-10-19 16:21:35] Extração ZIP concluída
+[2025-10-19 16:21:35] ID encontrado em arquivo: 2322010.lua -> 2322010
+[2025-10-19 16:21:35] Total de arquivos instalados: 2
+[2025-10-19 16:21:35] Jogo registrado: God of War Ragnarök (ID: 2322010)
+[2025-10-19 16:21:35] Diretório temporário removido
+[2025-10-19 16:21:35] Arquivo temporário removido
+[2025-10-19 16:21:36] Instalação concluída: 2322010
+[2025-10-19 16:22:51] Iniciando download: God of War Ragnarök (ID: 2322010)
+[2025-10-19 16:22:54] Salvando em: C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War Ragnarök (2322010).zip
+[2025-10-19 16:22:55] Download concluído em 1.41s (6.22 MB/s): C:\Users\yurid\AppData\Local\Temp\GameStore_Temp\God of War Ragnarök (2322010).zip
+[2025-10-19 16:22:55] Extraindo para: C:\Users\yurid\AppData\Local\Temp\GameStore_Extract\extract_1760901775
+[2025-10-19 16:22:55] Extração ZIP concluída
+[2025-10-19 16:22:55] ID encontrado em arquivo: 2322010.lua -> 2322010
+[2025-10-19 16:22:55] Total de arquivos instalados: 2
+[2025-10-19 16:22:55] Jogo registrado: God of War Ragnarök (ID: 2322010)
+[2025-10-19 16:22:55] Diretório temporário removido
+[2025-10-19 16:22:55] Arquivo temporário removido
+[2025-10-19 16:22:57] Instalação concluída: 2322010
