@@ -202,7 +202,43 @@ jobs:
     - name: Build EXE with PyInstaller
       run: |
         Write-Host "Construindo GamesStore.exe..."
-        pyinstaller --noconfirm --onefile --windowed --icon "assets/Images/icon.ico" --add-data "config;config/" --add-data "config.py;." --add-data "version.py;." --add-data "updater.py;." --add-data "rc.py;." --add-data "uxmod.pyd;." --add-data "xcore.pyd;." --add-data "datax.pyd;." --hidden-import "bs4" --hidden-import "PyQt5" --hidden-import "shutil" --hidden-import "psutil" --hidden-import "dotenv" --hidden-import "requests" --hidden-import "keyboard" --hidden-import "curl_cffi" --hidden-import "subprocess" --hidden-import "ctypes" --hidden-import "urllib.parse" --hidden-import "urllib.request" --hidden-import "PyQt5.QtNetwork" --name "GamesStore" main.py
+        pyinstaller --noconfirm --onefile --windowed `
+          --icon "assets/Images/icon.ico" `
+          --add-data "config;config/" `
+          --add-data "config.py;." `
+          --add-data "version.py;." `
+          --add-data "updater.py;." `
+          --add-data "rc.py;." `
+          --add-data "uxmod.pyd;." `
+          --add-data "xcore.pyd;." `
+          --add-data "datax.pyd;." `
+          --hidden-import "bs4" `
+          --hidden-import "PyQt5" `
+          --hidden-import "PyQt5.QtCore" `
+          --hidden-import "PyQt5.QtGui" `
+          --hidden-import "PyQt5.QtWidgets" `
+          --hidden-import "PyQt5.QtNetwork" `
+          --hidden-import "shutil" `
+          --hidden-import "psutil" `
+          --hidden-import "dotenv" `
+          --hidden-import "requests" `
+          --hidden-import "pyperclip" `
+          --hidden-import "curl_cffi" `
+          --hidden-import "subprocess" `
+          --hidden-import "ctypes" `
+          --hidden-import "keyboard" `
+          --hidden-import "winsound" `
+          --hidden-import "urllib.parse" `
+          --hidden-import "urllib.request" `
+          --name "GamesStore" main.py
+        
+        if (-not (Test-Path "dist\GamesStore.exe")) {
+          Write-Error "ERRO: GamesStore.exe nao foi criado"
+          exit 1
+        }
+        
+        Write-Host "OK GamesStore.exe criado com sucesso"
+        Get-Item "dist\GamesStore.exe" | Format-List Name, Length
       shell: pwsh
     
     - name: Verify EXE was created
