@@ -6,7 +6,7 @@ import tempfile
 from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QMessageBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 
-# versão inicial
+# versão inicial software
 
 GITHUB_REPO = "Yuri-Rodriguees/GamesStore"
 GITHUB_API_URL = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
