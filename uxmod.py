@@ -6,6 +6,7 @@ import math
 import time
 import xcore
 import winreg
+import ctypes
 import base64
 import psutil
 import hashlib
@@ -17,17 +18,15 @@ import threading
 import subprocess
 from datax import Styles
 from datetime import datetime, date
-from PyQt5.QtGui import QMovie, QPainter, QLinearGradient, QColor, QPen, QIcon, QBrush, QPainterPath
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QSizePolicy
 from PyQt5.QtWidgets import QMainWindow, QLabel, QFrame, QLineEdit, QPushButton, QMessageBox
+from PyQt5.QtGui import QMovie, QPainter, QLinearGradient, QColor, QPen, QIcon, QBrush, QPainterPath
 from PyQt5.QtCore import Qt, QTimer, QRunnable, QThreadPool, pyqtSignal, QObject, QPropertyAnimation, QEasingCurve, QPointF
-
 
 class LoginWorkerSignals(QObject):
     success = pyqtSignal(str)
     error   = pyqtSignal(str)
     finished= pyqtSignal()
-
 
 class LoadingScreen(QWidget):
     error_signal = pyqtSignal(str) 
@@ -284,7 +283,6 @@ class LoadingScreen(QWidget):
                 self.parent_window_to_close.login_error(f"Falha ao iniciar: {e}")
             self.close()
 
-
 class LoginWorker(QRunnable):
     """Worker para autenticação com validação de HWID"""
     def __init__(self, username, password, key_extract, parent):
@@ -299,8 +297,8 @@ class LoginWorker(QRunnable):
         API_LOGIN_URL = 'https://gamestore.squareweb.app/api/login/desktop'
 
         try:
-            print(f"[LOGIN] Autenticando usuário: {self.username}")
-            print(f"[LOGIN] HWID: {self.hwid}")
+            # print(f"[LOGIN] Autenticando usuário: {self.username}")
+            # print(f"[LOGIN] HWID: {self.hwid}")
             
             payload = {
                 'email_ou_usuario': self.username,
@@ -311,8 +309,8 @@ class LoginWorker(QRunnable):
             response = requests.post(API_LOGIN_URL, json=payload, timeout=10)
             response_data = response.json()
             
-            print(f"[LOGIN] Status Code: {response.status_code}")
-            print(f"[LOGIN] Resposta: {response_data}")
+            # print(f"[LOGIN] Status Code: {response.status_code}")
+            # print(f"[LOGIN] Resposta: {response_data}")
 
             if response.status_code == 200:
                 user_info = response_data.get('user')
@@ -323,48 +321,48 @@ class LoginWorker(QRunnable):
                 else:
                     validity_to_emit = "permanente"
 
-                print(f"[LOGIN] Login bem-sucedido! Validade: {validity_to_emit}")
+                # print(f"[LOGIN] Login bem-sucedido! Validade: {validity_to_emit}")
                 self.signals.success.emit(validity_to_emit)
 
             elif response.status_code == 400:
                 error_message = response_data.get('message', 'Requisição inválida.')
-                print(f"[LOGIN] Erro 400: {error_message}")
+                #print(f"[LOGIN] Erro 400: {error_message}")
                 self.signals.error.emit(f'Erro de requisição: {error_message}')
                 
             elif response.status_code == 401:
                 error_message = response_data.get('message', 'Email/Usuário ou senha inválidos.')
-                print(f"[LOGIN] Erro 401: {error_message}")
+                #print(f"[LOGIN] Erro 401: {error_message}")
                 self.signals.error.emit(f'{error_message}')
 
             elif response.status_code == 403:
                 error_message = response_data.get('message', 'HWID não corresponde ou acesso negado.')
-                print(f"[LOGIN] Erro 403: {error_message}")
+                #print(f"[LOGIN] Erro 403: {error_message}")
                 self.signals.error.emit(f'{error_message}')
                 
             elif response.status_code == 500:
                 error_message = response_data.get('message', 'Erro interno do servidor.')
-                print(f"[LOGIN] Erro 500: {error_message}")
+                #print(f"[LOGIN] Erro 500: {error_message}")
                 self.signals.error.emit(f'Erro do servidor: {error_message}')
                 
             else:
                 error_message = response_data.get('message', 'Erro desconhecido')
-                print(f"[LOGIN] Erro {response.status_code}: {error_message}")
+                #print(f"[LOGIN] Erro {response.status_code}: {error_message}")
                 self.signals.error.emit(f'{error_message}')
 
         except requests.exceptions.Timeout:
-            print("[LOGIN] Timeout: Servidor não respondeu")
+            #print("[LOGIN] Timeout: Servidor não respondeu")
             self.signals.error.emit('Timeout: Servidor não respondeu.')
             
         except requests.exceptions.ConnectionError:
-            print("[LOGIN] Erro de conexão")
+            #print("[LOGIN] Erro de conexão")
             self.signals.error.emit('Erro de conexão. Verifique sua internet.')
             
         except json.JSONDecodeError:
-            print("[LOGIN] Resposta não é JSON")
+            #print("[LOGIN] Resposta não é JSON")
             self.signals.error.emit('Resposta inválida do servidor.')
             
         except Exception as e:
-            print(f"[LOGIN] Erro inesperado: {e}")
+            #print(f"[LOGIN] Erro inesperado: {e}")
             import traceback
             traceback.print_exc()
             self.signals.error.emit(f'Erro: {e}')
@@ -512,33 +510,37 @@ class softwarerei(QMainWindow):
         super().paintEvent(event)
 
     def key(self):
-        """Gera HWID único do computador"""
         def get_disk_serial():
             try:
-                result = subprocess.check_output("wmic diskdrive get SerialNumber", shell=True)
-                serials = result.decode().split("\n")
-                serials = [s.strip() for s in serials if s.strip() and "SerialNumber" not in s]
-                return serials[0] if serials else "NO_DISK"
+                volume_name_buffer = ctypes.create_unicode_buffer(1024)
+                file_system_name_buffer = ctypes.create_unicode_buffer(1024)
+                serial_number = ctypes.c_ulong()
+                ctypes.windll.kernel32.GetVolumeInformationW(
+                    ctypes.c_wchar_p("C:\\"),
+                    volume_name_buffer,
+                    ctypes.sizeof(volume_name_buffer),
+                    ctypes.byref(serial_number),
+                    None,
+                    None,
+                    file_system_name_buffer,
+                    ctypes.sizeof(file_system_name_buffer),
+                )
+                return str(serial_number.value)
             except Exception:
                 return "UNKNOWN_DISK"
 
-        def get_mac_address():
-            try:
-                for iface, addrs in psutil.net_if_addrs().items():
-                    for addr in addrs:
-                        if hasattr(psutil, "AF_LINK"):
-                            if addr.family == psutil.AF_LINK and addr.address != "00:00:00:00:00:00":
-                                return addr.address.replace(":", "")
-                        else:
-                            if addr.family == 17 and addr.address != "00:00:00:00:00:00":
-                                return addr.address.replace(":", "")
-            except Exception:
-                return "UNKNOWN_MAC"
+        def get_mac():
+            for iface, addrs in psutil.net_if_addrs().items():
+                for addr in addrs:
+                    if getattr(psutil, "AF_LINK", 17) == addr.family:
+                        mac = addr.address.replace(":", "")
+                        if mac and mac != "000000000000":
+                            return mac
             return "UNKNOWN_MAC"
 
-        disk = get_disk_serial()
-        mac = get_mac_address()
-        raw = f"{disk}_{mac}"
+        disk_id = get_disk_serial()
+        mac_id = get_mac()
+        raw = f"{disk_id}_{mac_id}"
         self.key_extract = hashlib.sha256(raw.encode()).hexdigest().upper()[:24]
 
     def generate_unique_code(self, checked=False):
