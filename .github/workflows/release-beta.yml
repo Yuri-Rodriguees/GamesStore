@@ -1,0 +1,127 @@
+name: Beta Release (Prerelease)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*-beta'  # Apenas tags com -beta
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  upload-modules:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Verify modules
+      run: |
+        for file in uxmod.py xcore.py datax.py; do
+          if [ ! -f "$file" ]; then
+            echo "ERRO: $file não encontrado"
+            exit 1
+          fi
+        done
+        echo "OK Módulos encontrados"
+    
+    - name: Upload modules
+      uses: actions/upload-artifact@v4
+      with:
+        name: secure-modules-beta
+        path: |
+          uxmod.py
+          xcore.py
+          datax.py
+        retention-days: 30
+  
+  build-beta:
+    runs-on: windows-latest
+    needs: upload-modules
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+    
+    - name: Download modules
+      uses: actions/download-artifact@v4
+      with:
+        name: secure-modules-beta
+        path: .
+    
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pyinstaller PyQt5 requests bs4 psutil python-dotenv curl-cffi keyboard pyperclip Cython setuptools
+      shell: pwsh
+    
+    - name: Create config
+      run: |
+        echo # config.py > config.py
+        echo. >> config.py
+        echo SECRET_KEY = b"${{ secrets.SECRET_KEY }}" >> config.py
+        echo API_URL = "${{ secrets.API_URL }}" >> config.py
+        echo API_URL_SITE = "${{ secrets.API_URL_SITE }}" >> config.py
+        echo AUTH_CODE = "${{ secrets.AUTH_CODE }}" >> config.py
+      shell: cmd
+    
+    - name: Compile modules
+      run: |
+        python setup.py build_ext --inplace
+        
+        if (Test-Path "uxmod.cp311-win_amd64.pyd") { Copy-Item "uxmod.cp311-win_amd64.pyd" "uxmod.pyd" -Force }
+        if (Test-Path "xcore.cp311-win_amd64.pyd") { Copy-Item "xcore.cp311-win_amd64.pyd" "xcore.pyd" -Force }
+        if (Test-Path "datax.cp311-win_amd64.pyd") { Copy-Item "datax.cp311-win_amd64.pyd" "datax.pyd" -Force }
+      shell: pwsh
+    
+    - name: Build EXE
+      run: |
+        pyinstaller --noconfirm --onefile --windowed `
+          --icon "assets/Images/icon.ico" `
+          --add-data "config;config/" `
+          --add-data "config.py;." `
+          --add-data "version.py;." `
+          --add-data "updater.py;." `
+          --add-data "rc.py;." `
+          --add-data "uxmod.pyd;." `
+          --add-data "xcore.pyd;." `
+          --add-data "datax.pyd;." `
+          --collect-all "keyboard" `
+          --hidden-import "keyboard" `
+          --hidden-import "pyperclip" `
+          --hidden-import "PyQt5.QtCore" `
+          --hidden-import "PyQt5.QtGui" `
+          --hidden-import "PyQt5.QtWidgets" `
+          --name "GamesStore" main.py
+      shell: pwsh
+    
+    - name: Create PRERELEASE (NÃO APARECE PARA USUÁRIOS)
+      uses: softprops/action-gh-release@v2
+      with:
+        files: dist/GamesStore.exe
+        prerelease: true  # ⚠️ CRÍTICO: Marca como prerelease
+        draft: false
+        body: |
+          ## ⚠️ VERSÃO BETA - NÃO PÚBLICA
+          
+          **Esta é uma versão de testes interna.**
+          
+          ❌ Não aparece na verificação automática de atualizações
+          ❌ Não é recomendada para usuários finais
+          ✅ Apenas para testadores com acesso ao link
+          
+          ### Testadores
+          Se você recebeu este link, pode testar esta versão.
+          Reporte bugs encontrados.
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

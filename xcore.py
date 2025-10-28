@@ -1538,6 +1538,323 @@ class InstalledGameModal(QWidget):
         self.background.setGeometry(0, 0, self.width(), self.height())
         self.center_modal()
         
+class ManualInstallWorkerSignals(QObject):
+    """Sinais para ManualInstallWorker"""
+    progress = pyqtSignal(int)    
+    status = pyqtSignal(str)      
+    success = pyqtSignal(str)     
+    error = pyqtSignal(str)       
+    finished = pyqtSignal()
+
+class ManualInstallWorker(QRunnable):
+    """Worker para instalação manual de jogos"""
+    
+    def __init__(self, game_id, game_name, filepath, steam_path):
+        super().__init__()
+        self.game_id = game_id
+        self.game_name = game_name
+        self.filepath = filepath
+        self.steam_path = steam_path
+        self.signals = ManualInstallWorkerSignals()
+    
+    @Slot()
+    def run(self):
+        """Executa extração e instalação"""
+        temp_dir = None
+        
+        try:
+            self.signals.status.emit("Verificando arquivo...")
+            self.signals.progress.emit(10)
+            
+            # Validar arquivo
+            if not os.path.exists(self.filepath):
+                raise FileNotFoundError(f"Arquivo não encontrado: {self.filepath}")
+            
+            # Criar diretório temporário
+            self.signals.status.emit("Criando diretório temporário...")
+            self.signals.progress.emit(20)
+            
+            temp_base = Path(tempfile.gettempdir()) / "GameStore_Manual"
+            temp_base.mkdir(parents=True, exist_ok=True)
+            temp_dir = temp_base / f"manual_{int(time.time())}"
+            temp_dir.mkdir(parents=True, exist_ok=True)
+            
+            log_message(f"Extraindo para: {temp_dir}")
+            
+            # Extrair arquivo
+            self.signals.status.emit("Extraindo arquivos...")
+            self.signals.progress.emit(30)
+            
+            if self.filepath.lower().endswith('.zip'):
+                with zipfile.ZipFile(self.filepath, 'r') as zip_ref:
+                    total_files = len(zip_ref.namelist())
+                    for i, file in enumerate(zip_ref.namelist()):
+                        zip_ref.extract(file, temp_dir)
+                        progress = 30 + int((i / total_files) * 40)
+                        self.signals.progress.emit(progress)
+                log_message("Extração ZIP concluída")
+            
+            elif self.filepath.lower().endswith('.rar'):
+                winrar_paths = [
+                    r"C:\Program Files\WinRAR\WinRAR.exe",
+                    r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
+                ]
+                
+                winrar_path = None
+                for path in winrar_paths:
+                    if os.path.exists(path):
+                        winrar_path = path
+                        break
+                
+                if not winrar_path:
+                    raise Exception("WinRAR não encontrado. Instale o WinRAR para extrair arquivos .rar")
+                
+                subprocess.run(
+                    [winrar_path, 'x', '-ibck', '-inul', str(self.filepath), str(temp_dir)],
+                    check=True,
+                    timeout=300
+                )
+                self.signals.progress.emit(70)
+                log_message("Extração RAR concluída")
+            
+            # Instalar arquivos
+            self.signals.status.emit("Instalando arquivos do jogo...")
+            self.signals.progress.emit(75)
+            
+            moved_files = self.process_game_files(str(temp_dir), self.steam_path)
+            
+            self.signals.progress.emit(90)
+            
+            # Registrar jogo
+            self.signals.status.emit("Registrando jogo...")
+            self.register_game(self.game_name, self.game_id, moved_files)
+            
+            self.signals.progress.emit(100)
+            
+            self.signals.success.emit(
+                f"{self.game_name} instalado com sucesso!\n\n"
+                f"Reinicie a Steam para ver o jogo na biblioteca."
+            )
+            
+        except Exception as e:
+            error_msg = f"Erro: {str(e)}"
+            log_message(error_msg)
+            import traceback
+            traceback.print_exc()
+            self.signals.error.emit(error_msg)
+            
+        finally:
+            # Limpeza
+            try:
+                if temp_dir and temp_dir.exists():
+                    def remove_readonly(func, path, excinfo):
+                        os.chmod(path, stat.S_IWRITE)
+                        func(path)
+                    
+                    shutil.rmtree(temp_dir, onerror=remove_readonly)
+                    log_message("Diretório temporário removido")
+                    
+            except Exception as e:
+                log_message(f"Erro na limpeza: {e}")
+            
+            self.signals.finished.emit()
+    
+    def process_game_files(self, source_dir, steam_path):
+        """Processa e move arquivos do jogo"""
+        # Criar diretórios da Steam
+        stplugin_dir = os.path.join(steam_path, "config", "stplug-in")
+        depotcache_dir = os.path.join(steam_path, "config", "depotcache")
+        StatsExport_dir = os.path.join(steam_path, "config", "StatsExport")
+        
+        os.makedirs(stplugin_dir, exist_ok=True)
+        os.makedirs(depotcache_dir, exist_ok=True)
+        os.makedirs(StatsExport_dir, exist_ok=True)
+        
+        moved_files = {
+            'lua': [],
+            'st': [],
+            'bin': [],
+            'manifests': []
+        }
+        
+        # Mover arquivos
+        for root, _, files in os.walk(source_dir):
+            for file in files:
+                file_path = os.path.join(root, file)
+                
+                if file.lower().endswith('.lua'):
+                    dest_path = os.path.join(stplugin_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['lua'].append(file)
+                    
+                elif file.lower().endswith('.st'):
+                    dest_path = os.path.join(stplugin_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['st'].append(file)
+                    
+                elif file.lower().endswith('.bin'):
+                    dest_path = os.path.join(StatsExport_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['bin'].append(file)
+                    
+                elif file.lower().endswith('.manifest'):
+                    dest_path = os.path.join(depotcache_dir, file)
+                    shutil.copy2(file_path, dest_path)
+                    moved_files['manifests'].append(file)
+        
+        total_moved = sum(len(files) for files in moved_files.values())
+        if total_moved == 0:
+            raise ValueError("Nenhum arquivo válido encontrado no pacote")
+        
+        log_message(f"Total de arquivos instalados: {total_moved}")
+        return moved_files
+    
+    def register_game(self, game_name, game_id, moved_files):
+        """Registra o jogo instalado"""
+        try:
+            registry_path = Path(os.getenv('APPDATA')) / "GamesStore" / "game_registry.json"
+            registry_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            registry = {}
+            if registry_path.exists():
+                with open(registry_path, 'r') as f:
+                    registry = json.load(f)
+            
+            registry[game_name] = {
+                "id": game_id,
+                "install_date": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
+                "paths": moved_files,
+                "install_type": "manual"
+            }
+            
+            with open(registry_path, 'w') as f:
+                json.dump(registry, f, indent=4)
+            
+            log_message(f"Jogo registrado: {game_name} (ID: {game_id})")
+            
+        except Exception as e:
+            log_message(f"Erro ao registrar jogo: {e}")
+            raise
+
+class ManualInstallProgressOverlay(QDialog):
+    """Overlay de progresso para instalação manual"""
+    
+    def __init__(self, parent, game_id, game_name, filepath, steam_path):
+        super().__init__(parent)
+        self.game_id = game_id
+        self.game_name = game_name
+        self.filepath = filepath
+        self.steam_path = steam_path
+        
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setModal(True)
+        self.setFixedSize(500, 350)
+        
+        self.setup_ui()
+        
+        # Iniciar instalação
+        QTimer.singleShot(100, self.start_installation)
+    
+    def setup_ui(self):
+        """Configura interface do overlay"""
+        self.setStyleSheet("""
+            QDialog {
+                background: #1a1a1a;
+                border-radius: 16px;
+            }
+        """)
+        
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        # Título
+        title = QLabel(f"Instalando {self.game_name}")
+        title.setFont(QFont("Arial", 16, QFont.Bold))
+        title.setStyleSheet("color: white;")
+        title.setAlignment(Qt.AlignCenter)
+        title.setWordWrap(True)
+        
+        # Status
+        self.status_label = QLabel("Preparando instalação...")
+        self.status_label.setFont(QFont("Arial", 12))
+        self.status_label.setStyleSheet("color: rgba(255, 255, 255, 0.7);")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        
+        # Barra de progresso
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setFixedHeight(30)
+        self.progress_bar.setStyleSheet("""
+            QProgressBar {
+                background: #232323;
+                border: 2px solid #333;
+                border-radius: 15px;
+                text-align: center;
+                color: white;
+                font-weight: bold;
+            }
+            QProgressBar::chunk {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #47D64E,
+                    stop:1 #5ce36c
+                );
+                border-radius: 13px;
+            }
+        """)
+        self.progress_bar.setValue(0)
+        
+        # Detalhes
+        self.details_label = QLabel(f"ID: {self.game_id}")
+        self.details_label.setFont(QFont("Arial", 10))
+        self.details_label.setStyleSheet("color: rgba(255, 255, 255, 0.5);")
+        self.details_label.setAlignment(Qt.AlignCenter)
+        
+        layout.addWidget(title)
+        layout.addWidget(self.status_label)
+        layout.addWidget(self.progress_bar)
+        layout.addWidget(self.details_label)
+    
+    def start_installation(self):
+        """Inicia processo de instalação"""
+        worker = ManualInstallWorker(
+            self.game_id, 
+            self.game_name, 
+            self.filepath, 
+            self.steam_path
+        )
+        
+        worker.signals.progress.connect(self.update_progress)
+        worker.signals.status.connect(self.update_status)
+        worker.signals.success.connect(self.on_success)
+        worker.signals.error.connect(self.on_error)
+        
+        QThreadPool.globalInstance().start(worker)
+    
+    def update_progress(self, value):
+        """Atualiza barra de progresso"""
+        self.progress_bar.setValue(value)
+    
+    def update_status(self, status):
+        """Atualiza mensagem de status"""
+        self.status_label.setText(status)
+    
+    def on_success(self, message):
+        """Callback de sucesso"""
+        self.accept()
+        QMessageBox.information(self.parent(), "✅ Instalação Concluída", message)
+        self.parent().load_installed_games()
+        
+        # Perguntar sobre reiniciar Steam
+        QTimer.singleShot(500, self.parent().ask_restart_steam)
+    
+    def on_error(self, error_msg):
+        """Callback de erro"""
+        self.reject()
+        QMessageBox.critical(self.parent(), "❌ Erro na Instalação", 
+            f"Falha ao instalar o jogo:\n\n{error_msg}")
+        
 class GameApp(QWidget):
     """Aplicação principal do Games Store Launcher"""
     
@@ -1985,11 +2302,9 @@ class GameApp(QWidget):
                 border: 2px solid transparent;
             }
             QFrame:hover {
-                border: 2px solid #47D64E;
                 background: #2a2a2a;
             }
             QFrame[spotlight="true"] {
-                border: 2px solid #a8ff6d;
                 background: #222e1a;
             }
         """)
@@ -2093,7 +2408,6 @@ class GameApp(QWidget):
         dialog.setStyleSheet("""
             QDialog {
                 background: #1a1a1a;
-                border: 2px solid #47D64E;
                 border-radius: 12px;
             }
         """)
@@ -2215,11 +2529,9 @@ class GameApp(QWidget):
                 border: 2px solid transparent;
             }
             QFrame:hover {
-                border: 2px solid #47D64E;
                 background: #2a2a2a;
             }
             QFrame[spotlight="true"] {
-                border: 2px solid #acff75;
                 background: #222f1a;
             }
         """)
@@ -2657,12 +2969,45 @@ class GameApp(QWidget):
         self.installed_count_label.setFont(QFont("Arial", 12))
         self.installed_count_label.setStyleSheet("color: rgba(255, 255, 255, 0.6);")
         
+        # NOVO: Botão de instalação manual
+        btn_manual_install = QPushButton("📥 Instalar Manualmente")
+        btn_manual_install.setFixedSize(200, 45)
+        btn_manual_install.setCursor(Qt.PointingHandCursor)
+        btn_manual_install.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #47D64E,
+                    stop:1 #5ce36c
+                );
+                color: #1F1F1F;
+                border: none;
+                border-radius: 22px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5ce36c,
+                    stop:1 #6ff57d
+                );
+            }
+            QPushButton:pressed {
+                background: #3cb043;
+            }
+        """)
+        btn_manual_install.clicked.connect(self.open_manual_install_dialog)
+        
         header_layout.addWidget(title)
         header_layout.addStretch()
         header_layout.addWidget(self.installed_count_label)
+        header_layout.addSpacing(15)
+        header_layout.addWidget(btn_manual_install)
         
         layout.addWidget(header)
         
+        # Restante do código permanece igual...
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -2703,6 +3048,215 @@ class GameApp(QWidget):
         
         QTimer.singleShot(200, self.load_installed_games)
 
+    def install_manual_game(self, filepath):
+        """Instala jogo a partir de arquivo local"""
+        try:
+            # Verificar Steam
+            if not self.steam_path:
+                self.steam_path = self.get_steam_directory()
+            
+            if not self.steam_path:
+                QMessageBox.critical(self, "Erro", 
+                    "Steam não encontrada!\n\n"
+                    "Por favor, instale o Steam Client primeiro.")
+                return
+            
+            # Validar nome do arquivo
+            filename = os.path.basename(filepath)
+            match = re.match(r"^(.+?)\s*\((\d+)\)\.(zip|rar)$", filename, re.IGNORECASE)
+            
+            if not match:
+                QMessageBox.critical(self, "Erro de Formato",
+                    f"Nome de arquivo inválido!\n\n"
+                    f"Esperado: Nome do Jogo (ID).zip ou .rar\n"
+                    f"Recebido: {filename}")
+                return
+            
+            game_name = match.group(1).strip()
+            game_id = match.group(2)
+            
+            # Criar worker de instalação manual
+            progress_dialog = ManualInstallProgressOverlay(
+                self, game_id, game_name, filepath, self.steam_path
+            )
+            progress_dialog.exec_()
+            
+        except Exception as e:
+            QMessageBox.critical(self, "Erro", f"Erro ao instalar jogo:\n{str(e)}")
+            import traceback
+            traceback.print_exc()
+
+    def open_manual_install_dialog(self):
+        """Abre dialog para seleção e instalação manual de arquivo"""
+        dialog = QDialog(self)
+        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        dialog.setFixedSize(550, 400)
+        dialog.setStyleSheet("""
+            QDialog {
+                background: #1a1a1a;
+                border-radius: 16px;
+            }
+        """)
+        
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+        
+        # Título
+        title = QLabel("📥 Instalação Manual de Jogo")
+        title.setFont(QFont("Arial", 18, QFont.Bold))
+        title.setStyleSheet("color: white;")
+        title.setAlignment(Qt.AlignCenter)
+        
+        # Instruções
+        instructions = QLabel(
+            "Selecione um arquivo .ZIP ou .RAR no formato:\n"
+            "Nome do Jogo (ID).zip\n\n"
+            "Exemplo: GTA V (271590).rar"
+        )
+        instructions.setFont(QFont("Arial", 11))
+        instructions.setStyleSheet("color: rgba(255, 255, 255, 0.7); padding: 10px;")
+        instructions.setAlignment(Qt.AlignCenter)
+        instructions.setWordWrap(True)
+        
+        # Frame de seleção de arquivo
+        file_frame = QFrame()
+        file_frame.setFixedHeight(100)
+        file_frame.setStyleSheet("""
+            QFrame {
+                background: #232323;
+                border-radius: 12px;
+            }
+        """)
+        
+        file_layout = QVBoxLayout(file_frame)
+        file_layout.setAlignment(Qt.AlignCenter)
+        
+        file_label = QLabel("📁 Nenhum arquivo selecionado")
+        file_label.setFont(QFont("Arial", 11))
+        file_label.setStyleSheet("color: rgba(255, 255, 255, 0.5);")
+        file_label.setAlignment(Qt.AlignCenter)
+        file_label.setWordWrap(True)
+        
+        file_layout.addWidget(file_label)
+        
+        # Botão de seleção
+        btn_select = QPushButton("🔍 Selecionar Arquivo")
+        btn_select.setFixedHeight(45)
+        btn_select.setCursor(Qt.PointingHandCursor)
+        btn_select.setStyleSheet("""
+            QPushButton {
+                background: #2a2a2a;
+                color: white;
+                border: 2px solid #47D64E;
+                border-radius: 22px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #333333;
+                border-color: #5ce36c;
+            }
+        """)
+        
+        selected_file_path = [None]  # Usar lista para mutabilidade
+        
+        def select_file():
+            file_path, _ = QFileDialog.getOpenFileName(
+                dialog,
+                "Selecionar Arquivo de Jogo",
+                os.path.expanduser("~"),
+                "Arquivos de Jogo (*.zip *.rar);;Todos os Arquivos (*.*)"
+            )
+            
+            if file_path:
+                selected_file_path[0] = file_path
+                filename = os.path.basename(file_path)
+                file_label.setText(f"✅ {filename}")
+                file_label.setStyleSheet("color: #47D64E;")
+                
+                # Validar formato
+                match = re.match(r"^(.+?)\s*\((\d+)\)\.(zip|rar)$", filename, re.IGNORECASE)
+                if not match:
+                    file_label.setText(f"⚠️ {filename}\n(Formato inválido)")
+                    file_label.setStyleSheet("color: #ff9500;")
+        
+        btn_select.clicked.connect(select_file)
+        
+        # Botões de ação
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(15)
+        
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setFixedSize(120, 45)
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: #2a2a2a;
+                color: white;
+                border: 1px solid #444;
+                border-radius: 22px;
+                font-size: 13px;
+            }
+            QPushButton:hover {
+                background: #333;
+            }
+        """)
+        btn_cancel.clicked.connect(dialog.reject)
+        
+        btn_install = QPushButton("🚀 Instalar")
+        btn_install.setFixedSize(120, 45)
+        btn_install.setCursor(Qt.PointingHandCursor)
+        btn_install.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #47D64E,
+                    stop:1 #5ce36c
+                );
+                color: #1F1F1F;
+                border: none;
+                border-radius: 22px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5ce36c,
+                    stop:1 #6ff57d
+                );
+            }
+            QPushButton:disabled {
+                background: #333;
+                color: #666;
+            }
+        """)
+        
+        def start_manual_install():
+            if not selected_file_path[0]:
+                QMessageBox.warning(dialog, "Aviso", "Selecione um arquivo primeiro!")
+                return
+            
+            dialog.accept()
+            self.install_manual_game(selected_file_path[0])
+        
+        btn_install.clicked.connect(start_manual_install)
+        
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(btn_cancel)
+        buttons_layout.addWidget(btn_install)
+        
+        # Montagem do layout
+        layout.addWidget(title)
+        layout.addWidget(instructions)
+        layout.addWidget(file_frame)
+        layout.addWidget(btn_select)
+        layout.addStretch()
+        layout.addLayout(buttons_layout)
+        
+        dialog.exec_()
+        
     def load_installed_games(self):
         """Carrega jogos com grid 5 colunas"""
         try:
@@ -2762,11 +3316,9 @@ class GameApp(QWidget):
                 border: 2px solid transparent;
             }
             QFrame:hover {
-                border: 2px solid #47D64E;
                 background: #2a2a2a;
             }
             QFrame[spotlight="true"] {
-                border: 2px solid #a3ff75;
                 background: #25391b;
             }
         """)
