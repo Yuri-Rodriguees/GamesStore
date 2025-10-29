@@ -83,14 +83,40 @@ def get_safe_download_dir():
         script_dir.mkdir(parents=True, exist_ok=True)
         return script_dir
 
-def log_message(message):
-    """Registra mensagens no arquivo de log"""
+def get_log_directory():
+    """Retorna o diretório de logs no AppData"""
     try:
-        log_path = Path(__file__).parent / 'log.txt'
+        if sys.platform == "win32":
+            appdata = Path.home() / "AppData/Roaming"
+        elif sys.platform == "linux":
+            appdata = Path.home() / ".local/share"
+        elif sys.platform == "darwin":
+            appdata = Path.home() / "Library/Application Support"
+        else:
+            appdata = Path.home()
+        
+        log_dir = appdata / "GamesStoreLauncher" / "logs"
+        log_dir.mkdir(parents=True, exist_ok=True)
+        return log_dir
+    except Exception as e:
+        # Fallback para pasta temporária se falhar
+        temp_dir = Path(tempfile.gettempdir()) / "GamesStoreLauncher" / "logs"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        return temp_dir
+
+
+def log_message(message):
+    """Registra mensagens no arquivo de log no AppData"""
+    try:
+        log_dir = get_log_directory()
+        log_path = log_dir / 'log.txt'
+        
         with open(log_path, 'a', encoding='utf-8') as f:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
+        # Fallback: imprime no console se não conseguir escrever
+        print(f"[LOG ERROR] {e}")
         print(f"[LOG] {message}")
 
 # ================================

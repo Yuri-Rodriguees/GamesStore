@@ -13,3 +13,8 @@
 [2025-10-28 14:34:09] Total de arquivos instalados: 2
 [2025-10-28 14:34:09] Jogo registrado: Mimesis (ID: 2827200)
 [2025-10-28 14:34:09] Diretório temporário removido
+[2025-10-28 21:26:40] Extração ZIP concluída
+[2025-10-28 21:26:40] Total de arquivos instalados: 2
+[2025-10-28 21:26:40] Jogo registrado: Forza Motorsport (ID: 2440510)
+[2025-10-28 21:26:40] Diretório temporário removido
+[2025-10-28 21:26:40] Arquivo temporário removido
