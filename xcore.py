@@ -104,19 +104,32 @@ def get_log_directory():
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
 
+def resource_path(relative_path):
+    """Retorna o caminho absoluto para recursos, funciona em dev e PyInstaller"""
+    try:
+        # PyInstaller cria uma pasta temporária e armazena o caminho em _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.dirname(os.path.abspath(__file__))
+    
+    return os.path.join(base_path, relative_path)
 
 def log_message(message):
-    """Registra mensagens no arquivo de log no AppData"""
+    """Registra mensagens no arquivo de log (compatível com .exe)"""
     try:
-        log_dir = get_log_directory()
+        if getattr(sys, 'frozen', False):
+            log_dir = Path(os.getenv('APPDATA')) / "GamesStoreLauncher" / "logs"
+        else:
+            log_dir = Path(__file__).parent / "logs"
+        
+        log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / 'log.txt'
         
         with open(log_path, 'a', encoding='utf-8') as f:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{timestamp}] {message}\n")
     except Exception as e:
-        # Fallback: imprime no console se não conseguir escrever
-        print(f"[LOG ERROR] {e}")
+        # Fallback silencioso para evitar crash
         print(f"[LOG] {message}")
 
 # ================================
