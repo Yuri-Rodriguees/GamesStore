@@ -2866,6 +2866,7 @@ class GameApp(QWidget):
     def load_games_from_api(self):
         """Carrega jogos da API com ordem aleatória"""
         try:
+            print(f"API URL site: {self.api_url_site}")
             response = requests.get(f"{self.api_url_site}/jogos-publicos", timeout=10)
             data = response.json()
             
