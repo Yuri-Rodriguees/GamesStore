@@ -462,6 +462,11 @@ class DownloadProgressOverlay(QDialog):
         self.setFixedSize(320, 320)
         self.setStyleSheet("background: rgba(26,26,26,0.97); border-radius: 20px;")
         self.setAttribute(Qt.WA_TranslucentBackground)
+        
+        # Flag para evitar múltiplos fechamentos
+        self._is_closing = False
+        self._game_id = game_id
+        self._parent_app = parent
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -494,8 +499,40 @@ class DownloadProgressOverlay(QDialog):
         parent.thread_pool.start(self.worker)
 
     def on_download_success(self, message, filepath, game_id):
-        self.accept()
-        self.parent().after_download_success(game_id)
+        """Callback de sucesso - fecha dialog e chama callback do pai"""
+        if self._is_closing:
+            return  # Evitar múltiplos fechamentos
+        
+        try:
+            self._is_closing = True
+            
+            # Chamar callback do pai ANTES de fechar o dialog
+            # Isso previne problemas quando executado como .exe
+            if self._parent_app and hasattr(self._parent_app, 'after_download_success'):
+                # Usar QTimer para garantir que está na thread principal
+                QTimer.singleShot(50, lambda: self._parent_app.after_download_success(game_id))
+            
+            # Fechar dialog de forma segura após um pequeno delay
+            QTimer.singleShot(100, self.close_dialog_safely)
+            
+        except Exception as e:
+            log_message(f"Erro ao processar sucesso do download: {e}")
+            import traceback
+            traceback.print_exc()
+            # Tentar fechar mesmo com erro
+            QTimer.singleShot(200, self.close_dialog_safely)
+    
+    def close_dialog_safely(self):
+        """Fecha o dialog de forma segura"""
+        try:
+            if self.isVisible():
+                self.accept()
+        except Exception as e:
+            log_message(f"Erro ao fechar dialog: {e}")
+            try:
+                self.hide()
+            except:
+                pass
 
     def on_download_error(self, error_msg):
         QMessageBox.critical(self, "Falha no download", error_msg)
@@ -2444,8 +2481,18 @@ class GameApp(QWidget):
         download_url = f"https://generator.ryuu.lol/secure_download?appid={game_id}&auth_code=RYUUMANIFESTtsl1c9"
 
         # Abre overlay de progresso
-        progress_dialog = DownloadProgressOverlay(self, game_id, game_name, download_url, steam_path)
-        progress_dialog.exec_()
+        try:
+            progress_dialog = DownloadProgressOverlay(self, game_id, game_name, download_url, steam_path)
+            # Usar exec_() de forma segura para .exe
+            result = progress_dialog.exec_()
+            # Garantir que o dialog foi fechado corretamente
+            if progress_dialog.isVisible():
+                progress_dialog.hide()
+        except Exception as e:
+            log_message(f"Erro ao exibir dialog de download: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Erro", f"Erro ao iniciar download:\n{str(e)}")
 
     def on_download_success(self, message, filepath, game_id):
         """Callback de sucesso do download"""
@@ -3486,19 +3533,37 @@ class GameApp(QWidget):
         return self.steam_path
     
     def after_download_success(self, game_id):
-        # Troca a tela para jogos instalados e recarrega a lista
-        self.pages.setCurrentWidget(self.tela_jogos)
-        self.load_installed_games()
-        
-        # (Opcional) SpotlightOverlay para destacar o card recém-instalado
-        card_widget = self.get_installed_game_card_widget_by_id(game_id)
-        if card_widget:
-            overlay = SpotlightOverlay(self, card_widget)
-            overlay.show()
-            QTimer.singleShot(2700, self.ask_restart_steam)
-        else:
-            # Se não quiser overlay ou não encontrar o card
-            QTimer.singleShot(700, self.ask_restart_steam)
+        """Callback chamado após download bem-sucedido"""
+        try:
+            # Troca a tela para jogos instalados e recarrega a lista
+            self.pages.setCurrentWidget(self.tela_jogos)
+            self.load_installed_games()
+            
+            # (Opcional) SpotlightOverlay para destacar o card recém-instalado
+            # Usar QTimer para garantir que a UI foi atualizada antes de mostrar overlay
+            QTimer.singleShot(300, lambda: self.show_spotlight_and_ask_restart(game_id))
+        except Exception as e:
+            log_message(f"Erro em after_download_success: {e}")
+            import traceback
+            traceback.print_exc()
+            # Mesmo com erro, tentar perguntar sobre reiniciar Steam
+            QTimer.singleShot(1000, self.ask_restart_steam)
+    
+    def show_spotlight_and_ask_restart(self, game_id):
+        """Mostra spotlight e pergunta sobre reiniciar Steam"""
+        try:
+            card_widget = self.get_installed_game_card_widget_by_id(game_id)
+            if card_widget:
+                overlay = SpotlightOverlay(self, card_widget)
+                overlay.show()
+                QTimer.singleShot(2700, self.ask_restart_steam)
+            else:
+                # Se não encontrar o card, apenas perguntar sobre reiniciar
+                QTimer.singleShot(700, self.ask_restart_steam)
+        except Exception as e:
+            log_message(f"Erro ao mostrar spotlight: {e}")
+            # Em caso de erro, apenas perguntar sobre reiniciar Steam
+            QTimer.singleShot(500, self.ask_restart_steam)
 
     def get_installed_game_card_widget_by_id(self, game_id):
         for i in range(self.installed_games_layout.count()):
@@ -3584,15 +3649,28 @@ class GameApp(QWidget):
                 pass
             
     def ask_restart_steam(self):
-        reply = QMessageBox.question(
-            self,
-            "Reiniciar Steam",
-            "O novo jogo foi instalado!\nDeseja reiniciar a Steam para aparecer na biblioteca?",
-            QMessageBox.Yes | QMessageBox.No,
-            QMessageBox.Yes
-        )
-        if reply == QMessageBox.Yes:
-            self.restart_steam()
+        """Pergunta se deseja reiniciar a Steam de forma segura"""
+        try:
+            # Verificar se a janela ainda está visível antes de mostrar QMessageBox
+            if not self.isVisible() or not self.isEnabled():
+                return
+            
+            reply = QMessageBox.question(
+                self,
+                "Reiniciar Steam",
+                "O novo jogo foi instalado!\nDeseja reiniciar a Steam para aparecer na biblioteca?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.Yes
+            )
+            
+            if reply == QMessageBox.Yes:
+                # Usar QTimer para garantir que está na thread principal
+                QTimer.singleShot(100, self.restart_steam)
+        except Exception as e:
+            log_message(f"Erro ao perguntar sobre reiniciar Steam: {e}")
+            import traceback
+            traceback.print_exc()
+            # Não fazer nada em caso de erro, apenas logar
             
     # ========================================================================
     # SEÇÃO 7: DRAG & DROP
