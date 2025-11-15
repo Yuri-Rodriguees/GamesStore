@@ -65,8 +65,8 @@ def get_log_directory() -> Path:
         return temp_dir
 
 
-def log_message(message: str) -> None:
-    """Registra mensagens no arquivo de log (compatível com .exe)"""
+def log_message(message: str, include_traceback: bool = False) -> None:
+    """Registra mensagens no arquivo de log (compatível com .exe) - ESCREVE SINCRONAMENTE"""
     try:
         if getattr(sys, 'frozen', False):
             log_dir = Path(os.getenv('APPDATA')) / "GamesStoreLauncher" / "logs"
@@ -74,10 +74,30 @@ def log_message(message: str) -> None:
             log_dir = Path(__file__).parent / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
         log_path = log_dir / 'log.txt'
+        
+        # Abrir em modo 'a' e forçar flush para garantir escrita imediata
         with open(log_path, 'a', encoding='utf-8') as f:
             timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             f.write(f"[{timestamp}] {message}\n")
-    except Exception:
+            
+            if include_traceback:
+                import traceback
+                tb = traceback.format_exc()
+                f.write(f"[{timestamp}] TRACEBACK:\n{tb}\n")
+            
+            # FORÇAR flush para garantir que o log seja escrito imediatamente
+            f.flush()
+            # No Windows, também forçar sincronização
+            if hasattr(os, 'fsync'):
+                try:
+                    os.fsync(f.fileno())
+                except:
+                    pass
+        
+        # Também imprimir no console para debug
+        print(f"[LOG] {message}")
+    except Exception as e:
+        print(f"[LOG ERROR] Falha ao escrever log: {e}")
         print(f"[LOG] {message}")
 
 

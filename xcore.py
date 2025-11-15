@@ -104,23 +104,28 @@ class DownloadWorker(QRunnable):
     @Slot()
     def run(self):
         """Executa download, extração e instalação"""
+        log_message(f"[DOWNLOAD WORKER] Worker iniciado - game_id={self.game_id}, game_name={self.game_name}")
         filepath = None
         temp_dir = None
         
         try:
             # FASE 1: DOWNLOAD
+            log_message(f"[DOWNLOAD WORKER] FASE 1: Preparando download para {self.game_id}")
             self.signals.status.emit("Preparando download...")
             
             if not self.game_name:
+                log_message(f"[DOWNLOAD WORKER] Nome não fornecido, buscando na Steam API...")
                 self.game_name = self.get_game_name_from_steam(self.game_id)
+                log_message(f"[DOWNLOAD WORKER] Nome obtido: {self.game_name}")
             
             if not self.download_url:
                 if not API_URL or not AUTH_CODE:
                     raise Exception("Configuração de API não encontrada")
                 
                 self.download_url = f"{API_URL}?appid={self.game_id}&auth_code={AUTH_CODE}"
+                log_message(f"[DOWNLOAD WORKER] URL de download gerada")
             
-            # log_message(f"Iniciando download: {self.game_name} (ID: {self.game_id})")
+            log_message(f"[DOWNLOAD WORKER] Iniciando download: {self.game_name} (ID: {self.game_id})")
             self.signals.status.emit(f"Baixando {self.game_name}...")
             
             headers = {
@@ -228,7 +233,7 @@ class DownloadWorker(QRunnable):
                             zip_ref.extract(file, temp_dir)
                             progress = int((i / total_files) * 100)
                             self.signals.progress.emit(progress)
-                    log_message("Extração ZIP concluída")
+                    log_message("[DOWNLOAD WORKER] Extração ZIP concluída")
                 
                 elif str(filepath).lower().endswith('.rar'):
                     winrar_paths = [
@@ -259,43 +264,62 @@ class DownloadWorker(QRunnable):
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL
                     )
-                    log_message("Extração RAR concluída")
+                    log_message("[DOWNLOAD WORKER] Extração RAR concluída")
                 
                 self.signals.progress.emit(100)
                 self.signals.status.emit("Instalando arquivos do jogo...")
                 self.signals.progress.emit(0)
                 
+                log_message("[DOWNLOAD WORKER] Processando arquivos do jogo...")
                 extracted_game_id, extracted_game_name, moved_files = self.process_game_files(
                     str(temp_dir), 
                     self.steam_path
                 )
+                log_message(f"[DOWNLOAD WORKER] Arquivos processados - {extracted_game_name} (ID: {extracted_game_id})")
                 
+                log_message(f"[DOWNLOAD WORKER] Registrando jogo: {extracted_game_name} (ID: {extracted_game_id})")
                 self.register_game(extracted_game_name, extracted_game_id, moved_files)
-                self.signals.progress.emit(100)
+                log_message("[DOWNLOAD WORKER] Jogo registrado com sucesso")
                 
-                self.signals.success.emit(
-                    f"{extracted_game_name} instalado com sucesso!\n"
-                    f"Velocidade média: {avg_speed_mbps:.2f} MB/s\n"
-                    f"Reinicie a Steam para ver o jogo.",
-                    str(filepath),
-                    extracted_game_id
-                )
+                log_message("[DOWNLOAD WORKER] Enviando progress 100%")
+                self.signals.progress.emit(100)
+                log_message("[DOWNLOAD WORKER] Progress 100% enviado")
+                
+                log_message(f"[DOWNLOAD WORKER] Instalação concluída - {extracted_game_name} (ID: {extracted_game_id})")
+                try:
+                    self.signals.success.emit(
+                        f"{extracted_game_name} instalado com sucesso!\n"
+                        f"Velocidade média: {avg_speed_mbps:.2f} MB/s\n"
+                        f"Reinicie a Steam para ver o jogo.",
+                        str(filepath),
+                        extracted_game_id
+                    )
+                    log_message("[DOWNLOAD WORKER] Signal success.emit enviado para instalação COM SUCESSO")
+                except Exception as e:
+                    log_message(f"[DOWNLOAD WORKER] ERRO ao emitir success para instalação: {e}", include_traceback=True)
             else:
-                self.signals.success.emit(
-                    f"Download de '{self.game_name}' concluído!\n"
-                    f"Velocidade média: {avg_speed_mbps:.2f} MB/s",
-                    str(filepath),
-                    self.game_id
-                )
+                log_message(f"[DOWNLOAD WORKER] Download concluído sem instalação - {self.game_name} (ID: {self.game_id})")
+                try:
+                    self.signals.success.emit(
+                        f"Download de '{self.game_name}' concluído!\n"
+                        f"Velocidade média: {avg_speed_mbps:.2f} MB/s",
+                        str(filepath),
+                        self.game_id
+                    )
+                    log_message("[DOWNLOAD WORKER] Signal success.emit enviado para download simples COM SUCESSO")
+                except Exception as e:
+                    log_message(f"[DOWNLOAD WORKER] ERRO ao emitir success para download: {e}", include_traceback=True)
             
         except Exception as e:
             error_msg = f"Erro: {str(e)}"
-            # log_message(error_msg)
+            log_message(f"[DOWNLOAD WORKER] ERRO durante download/instalação: {error_msg}", include_traceback=True)
             import traceback
             traceback.print_exc()
             self.signals.error.emit(error_msg)
+            log_message("[DOWNLOAD WORKER] Signal error.emit enviado")
             
         finally:
+            log_message("[DOWNLOAD WORKER] Iniciando limpeza (finally block)")
             # Limpeza
             try:
                 if temp_dir and temp_dir.exists():
@@ -304,18 +328,24 @@ class DownloadWorker(QRunnable):
                         func(path)
                     
                     shutil.rmtree(temp_dir, onerror=remove_readonly)
-                    log_message("Diretório temporário removido")
+                    log_message("[DOWNLOAD WORKER] Diretório temporário removido")
                 
                 if filepath and os.path.exists(filepath):
                     try:
                         os.remove(filepath)
-                        log_message("Arquivo temporário removido")
-                    except:
-                        pass
+                        log_message("[DOWNLOAD WORKER] Arquivo temporário removido")
+                    except Exception as e:
+                        log_message(f"[DOWNLOAD WORKER] Erro ao remover arquivo: {e}")
             except Exception as e:
-                log_message(f"Erro na limpeza: {e}")
+                log_message(f"[DOWNLOAD WORKER] Erro na limpeza: {e}", include_traceback=True)
             
-            self.signals.finished.emit()
+            log_message("[DOWNLOAD WORKER] Enviando signal finished.emit")
+            try:
+                self.signals.finished.emit()
+                log_message("[DOWNLOAD WORKER] Signal finished.emit enviado com sucesso")
+            except Exception as e:
+                log_message(f"[DOWNLOAD WORKER] ERRO ao emitir finished: {e}", include_traceback=True)
+            log_message("[DOWNLOAD WORKER] Worker concluído - FIM DO MÉTODO")
     
     def process_game_files(self, source_dir, steam_path):
         """Processa e move arquivos do jogo"""
@@ -392,7 +422,7 @@ class DownloadWorker(QRunnable):
         if total_moved == 0:
             raise ValueError("Nenhum arquivo válido encontrado")
         
-        log_message(f"Total de arquivos instalados: {total_moved}")
+        log_message(f"[DOWNLOAD WORKER] Total de arquivos instalados: {total_moved}")
         return game_id, game_name, moved_files
     
     def register_game(self, game_name, game_id, moved_files):
@@ -415,7 +445,7 @@ class DownloadWorker(QRunnable):
             with open(registry_path, 'w') as f:
                 json.dump(registry, f, indent=4)
             
-            log_message(f"Jogo registrado: {game_name} (ID: {game_id})")
+            log_message(f"[DOWNLOAD WORKER] Jogo registrado: {game_name} (ID: {game_id})")
 
         except Exception as e:
             log_message(f"Erro ao registrar jogo: {e}")
@@ -500,39 +530,63 @@ class DownloadProgressOverlay(QDialog):
 
     def on_download_success(self, message, filepath, game_id):
         """Callback de sucesso - fecha dialog e chama callback do pai"""
+        log_message(f"[DOWNLOAD SUCCESS] Iniciando - game_id={game_id}, filepath={filepath}")
+        
         if self._is_closing:
+            log_message("[DOWNLOAD SUCCESS] Já está fechando, ignorando")
             return  # Evitar múltiplos fechamentos
         
         try:
             self._is_closing = True
+            log_message(f"[DOWNLOAD SUCCESS] Flag _is_closing definida. Parent app: {self._parent_app is not None}")
             
             # Chamar callback do pai ANTES de fechar o dialog
             # Isso previne problemas quando executado como .exe
             if self._parent_app and hasattr(self._parent_app, 'after_download_success'):
+                log_message(f"[DOWNLOAD SUCCESS] Agendando after_download_success para game_id={game_id}")
                 # Usar QTimer para garantir que está na thread principal
-                QTimer.singleShot(50, lambda: self._parent_app.after_download_success(game_id))
+                QTimer.singleShot(50, lambda: self._safe_call_after_success(game_id))
+            else:
+                log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não encontrado ou sem método after_download_success")
             
             # Fechar dialog de forma segura após um pequeno delay
+            log_message("[DOWNLOAD SUCCESS] Agendando fechamento do dialog")
             QTimer.singleShot(100, self.close_dialog_safely)
             
         except Exception as e:
-            log_message(f"Erro ao processar sucesso do download: {e}")
-            import traceback
-            traceback.print_exc()
+            log_message(f"[DOWNLOAD SUCCESS] ERRO ao processar sucesso do download: {e}", include_traceback=True)
             # Tentar fechar mesmo com erro
             QTimer.singleShot(200, self.close_dialog_safely)
+    
+    def _safe_call_after_success(self, game_id):
+        """Chama after_download_success de forma segura com logs"""
+        try:
+            log_message(f"[DOWNLOAD SUCCESS] Chamando after_download_success para game_id={game_id}")
+            if self._parent_app and hasattr(self._parent_app, 'after_download_success'):
+                self._parent_app.after_download_success(game_id)
+                log_message("[DOWNLOAD SUCCESS] after_download_success chamado com sucesso")
+            else:
+                log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível ao chamar after_download_success")
+        except Exception as e:
+            log_message(f"[DOWNLOAD SUCCESS] ERRO ao chamar after_download_success: {e}", include_traceback=True)
     
     def close_dialog_safely(self):
         """Fecha o dialog de forma segura"""
         try:
+            log_message("[DOWNLOAD SUCCESS] Fechando dialog...")
             if self.isVisible():
+                log_message("[DOWNLOAD SUCCESS] Dialog está visível, chamando accept()")
                 self.accept()
+                log_message("[DOWNLOAD SUCCESS] Dialog accept() chamado")
+            else:
+                log_message("[DOWNLOAD SUCCESS] Dialog já não está visível")
         except Exception as e:
-            log_message(f"Erro ao fechar dialog: {e}")
+            log_message(f"[DOWNLOAD SUCCESS] ERRO ao fechar dialog: {e}", include_traceback=True)
             try:
+                log_message("[DOWNLOAD SUCCESS] Tentando hide() como fallback")
                 self.hide()
-            except:
-                pass
+            except Exception as e2:
+                log_message(f"[DOWNLOAD SUCCESS] ERRO ao usar hide(): {e2}")
 
     def on_download_error(self, error_msg):
         QMessageBox.critical(self, "Falha no download", error_msg)
@@ -1687,7 +1741,7 @@ class ManualInstallWorker(QRunnable):
         if total_moved == 0:
             raise ValueError("Nenhum arquivo válido encontrado no pacote")
         
-        log_message(f"Total de arquivos instalados: {total_moved}")
+        log_message(f"[DOWNLOAD WORKER] Total de arquivos instalados: {total_moved}")
         return moved_files
     
     def register_game(self, game_name, game_id, moved_files):
@@ -1711,7 +1765,7 @@ class ManualInstallWorker(QRunnable):
             with open(registry_path, 'w') as f:
                 json.dump(registry, f, indent=4)
             
-            log_message(f"Jogo registrado: {game_name} (ID: {game_id})")
+            log_message(f"[DOWNLOAD WORKER] Jogo registrado: {game_name} (ID: {game_id})")
             
         except Exception as e:
             log_message(f"Erro ao registrar jogo: {e}")
@@ -3534,34 +3588,45 @@ class GameApp(QWidget):
     
     def after_download_success(self, game_id):
         """Callback chamado após download bem-sucedido"""
+        log_message(f"[AFTER_DOWNLOAD] Iniciando after_download_success para game_id={game_id}")
+        
         try:
+            log_message("[AFTER_DOWNLOAD] Trocando para tela de jogos instalados...")
             # Troca a tela para jogos instalados e recarrega a lista
             self.pages.setCurrentWidget(self.tela_jogos)
+            log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
             self.load_installed_games()
+            log_message("[AFTER_DOWNLOAD] Jogos instalados carregados")
             
             # (Opcional) SpotlightOverlay para destacar o card recém-instalado
             # Usar QTimer para garantir que a UI foi atualizada antes de mostrar overlay
+            log_message("[AFTER_DOWNLOAD] Agendando spotlight e restart prompt")
             QTimer.singleShot(300, lambda: self.show_spotlight_and_ask_restart(game_id))
+            log_message("[AFTER_DOWNLOAD] after_download_success concluído com sucesso")
         except Exception as e:
-            log_message(f"Erro em after_download_success: {e}")
-            import traceback
-            traceback.print_exc()
+            log_message(f"[AFTER_DOWNLOAD] ERRO em after_download_success: {e}", include_traceback=True)
             # Mesmo com erro, tentar perguntar sobre reiniciar Steam
             QTimer.singleShot(1000, self.ask_restart_steam)
     
     def show_spotlight_and_ask_restart(self, game_id):
         """Mostra spotlight e pergunta sobre reiniciar Steam"""
+        log_message(f"[SPOTLIGHT] Iniciando show_spotlight_and_ask_restart para game_id={game_id}")
+        
         try:
+            log_message("[SPOTLIGHT] Buscando card widget...")
             card_widget = self.get_installed_game_card_widget_by_id(game_id)
             if card_widget:
+                log_message("[SPOTLIGHT] Card encontrado, criando overlay...")
                 overlay = SpotlightOverlay(self, card_widget)
                 overlay.show()
+                log_message("[SPOTLIGHT] Overlay mostrado, agendando restart prompt")
                 QTimer.singleShot(2700, self.ask_restart_steam)
             else:
+                log_message("[SPOTLIGHT] Card não encontrado, agendando restart prompt direto")
                 # Se não encontrar o card, apenas perguntar sobre reiniciar
                 QTimer.singleShot(700, self.ask_restart_steam)
         except Exception as e:
-            log_message(f"Erro ao mostrar spotlight: {e}")
+            log_message(f"[SPOTLIGHT] ERRO ao mostrar spotlight: {e}", include_traceback=True)
             # Em caso de erro, apenas perguntar sobre reiniciar Steam
             QTimer.singleShot(500, self.ask_restart_steam)
 
@@ -3576,45 +3641,60 @@ class GameApp(QWidget):
 
     def restart_steam(self):
         """Reinicia a Steam sem abrir CMD visível"""
-        # Obter PID do próprio processo para evitar encerrá-lo
-        current_pid = os.getpid()
-        current_process = psutil.Process(current_pid)
-        current_name = current_process.name().lower() if hasattr(current_process, 'name') else ''
+        log_message("[RESTART_STEAM] Iniciando restart_steam")
         
-        steam_process_names = ["steam.exe", "steamwebhelper.exe", "steamservice.exe", "gameoverlayui.exe"]
-        
-        for proc in psutil.process_iter(['pid', 'name']):
-            try:
-                # Evitar encerrar o próprio processo
-                if proc.info['pid'] == current_pid:
-                    continue
+        try:
+            # Obter PID do próprio processo para evitar encerrá-lo
+            current_pid = os.getpid()
+            current_process = psutil.Process(current_pid)
+            current_name = current_process.name().lower() if hasattr(current_process, 'name') else ''
+            log_message(f"[RESTART_STEAM] PID atual: {current_pid}, nome: {current_name}")
+            
+            steam_process_names = ["steam.exe", "steamwebhelper.exe", "steamservice.exe", "gameoverlayui.exe"]
+            processes_killed = 0
+            
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    # Evitar encerrar o próprio processo
+                    if proc.info['pid'] == current_pid:
+                        log_message(f"[RESTART_STEAM] Pulando próprio processo PID={current_pid}")
+                        continue
+                        
+                    proc_name = proc.info['name'].lower() if proc.info['name'] else ""
                     
-                proc_name = proc.info['name'].lower() if proc.info['name'] else ""
-                
-                # Verificar se é um processo Steam
-                if any(steam_name in proc_name for steam_name in steam_process_names):
-                    try:
-                        proc_obj = psutil.Process(proc.info['pid'])
-                        proc_obj.terminate()
-                        # Aguardar um pouco antes de forçar kill
+                    # Verificar se é um processo Steam
+                    if any(steam_name in proc_name for steam_name in steam_process_names):
+                        log_message(f"[RESTART_STEAM] Encerrando processo Steam: {proc_name} (PID={proc.info['pid']})")
                         try:
-                            proc_obj.wait(timeout=3)
-                        except psutil.TimeoutExpired:
-                            proc_obj.kill()
-                    except (psutil.NoSuchProcess, psutil.AccessDenied):
-                        pass
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                continue
-            except Exception:
-                pass
-        
-        QTimer.singleShot(1800, self.open_steam_url)
+                            proc_obj = psutil.Process(proc.info['pid'])
+                            proc_obj.terminate()
+                            # Aguardar um pouco antes de forçar kill
+                            try:
+                                proc_obj.wait(timeout=3)
+                                processes_killed += 1
+                            except psutil.TimeoutExpired:
+                                proc_obj.kill()
+                                processes_killed += 1
+                        except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                            log_message(f"[RESTART_STEAM] Erro ao encerrar processo {proc_name}: {e}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+                except Exception as e:
+                    log_message(f"[RESTART_STEAM] Erro ao iterar processos: {e}")
+            
+            log_message(f"[RESTART_STEAM] {processes_killed} processos Steam encerrados. Agendando abertura...")
+            QTimer.singleShot(1800, self.open_steam_url)
+        except Exception as e:
+            log_message(f"[RESTART_STEAM] ERRO crítico em restart_steam: {e}", include_traceback=True)
 
     def open_steam_url(self):
         """Abre a Steam usando URL scheme"""
+        log_message("[OPEN_STEAM] Iniciando open_steam_url")
+        
         try:
             # Detectar se está rodando como .exe
             is_frozen = getattr(sys, 'frozen', False)
+            log_message(f"[OPEN_STEAM] Modo frozen (exe): {is_frozen}")
             
             if is_frozen:
                 # Quando executado como .exe, usar subprocess com flags adequadas
@@ -3623,8 +3703,9 @@ class GameApp(QWidget):
                 CREATE_NEW_PROCESS_GROUP = 0x00000200
                 flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
                 
+                log_message("[OPEN_STEAM] Usando subprocess com flags DETACHED_PROCESS")
                 # Usar cmd /c para executar o comando de forma isolada
-                subprocess.Popen(
+                proc = subprocess.Popen(
                     ['cmd', '/c', 'start', '', 'steam://open/main'],
                     creationflags=flags,
                     stdout=subprocess.DEVNULL,
@@ -3632,10 +3713,14 @@ class GameApp(QWidget):
                     stdin=subprocess.DEVNULL,
                     close_fds=True
                 )
+                log_message(f"[OPEN_STEAM] Processo iniciado com PID={proc.pid}")
             else:
+                log_message("[OPEN_STEAM] Modo desenvolvimento, usando os.startfile")
                 # Em desenvolvimento, usar os.startfile normalmente
                 os.startfile("steam://open/main")
-        except (AttributeError, OSError):
+                log_message("[OPEN_STEAM] os.startfile executado")
+        except (AttributeError, OSError) as e:
+            log_message(f"[OPEN_STEAM] Erro AttributeError/OSError: {e}, tentando fallback Linux/Mac")
             # Fallback para Linux/Mac
             try:
                 subprocess.Popen(
@@ -3645,16 +3730,27 @@ class GameApp(QWidget):
                     stdin=subprocess.DEVNULL,
                     start_new_session=True
                 )
-            except Exception:
-                pass
+                log_message("[OPEN_STEAM] Fallback xdg-open executado")
+            except Exception as e2:
+                log_message(f"[OPEN_STEAM] ERRO no fallback: {e2}")
+        except Exception as e:
+            log_message(f"[OPEN_STEAM] ERRO crítico: {e}", include_traceback=True)
             
     def ask_restart_steam(self):
         """Pergunta se deseja reiniciar a Steam de forma segura"""
+        log_message("[RESTART] Iniciando ask_restart_steam")
+        
         try:
             # Verificar se a janela ainda está visível antes de mostrar QMessageBox
-            if not self.isVisible() or not self.isEnabled():
+            is_visible = self.isVisible()
+            is_enabled = self.isEnabled()
+            log_message(f"[RESTART] Janela visível={is_visible}, habilitada={is_enabled}")
+            
+            if not is_visible or not is_enabled:
+                log_message("[RESTART] Janela não está visível ou habilitada, cancelando")
                 return
             
+            log_message("[RESTART] Mostrando QMessageBox.question...")
             reply = QMessageBox.question(
                 self,
                 "Reiniciar Steam",
@@ -3663,13 +3759,16 @@ class GameApp(QWidget):
                 QMessageBox.Yes
             )
             
+            log_message(f"[RESTART] Resposta recebida: {reply}, Yes={QMessageBox.Yes}")
+            
             if reply == QMessageBox.Yes:
+                log_message("[RESTART] Usuário escolheu sim, agendando restart_steam")
                 # Usar QTimer para garantir que está na thread principal
                 QTimer.singleShot(100, self.restart_steam)
+            else:
+                log_message("[RESTART] Usuário escolheu não")
         except Exception as e:
-            log_message(f"Erro ao perguntar sobre reiniciar Steam: {e}")
-            import traceback
-            traceback.print_exc()
+            log_message(f"[RESTART] ERRO ao perguntar sobre reiniciar Steam: {e}", include_traceback=True)
             # Não fazer nada em caso de erro, apenas logar
             
     # ========================================================================
