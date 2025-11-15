@@ -5,11 +5,8 @@ import json
 import math
 import time
 import xcore
-import winreg
-import ctypes
 import base64
 import psutil
-import hashlib
 import requests
 import keyboard
 import winsound
@@ -18,6 +15,7 @@ import threading
 import subprocess
 from datax import Styles
 from datetime import datetime, date
+from utils import get_steam_directory, generate_hwid
 from PyQt5.QtWidgets import QApplication, QWidget, QVBoxLayout, QLabel, QSizePolicy
 from PyQt5.QtWidgets import QMainWindow, QLabel, QFrame, QLineEdit, QPushButton, QMessageBox
 from PyQt5.QtGui import QMovie, QPainter, QLinearGradient, QColor, QPen, QIcon, QBrush, QPainterPath
@@ -181,13 +179,11 @@ class LoadingScreen(QWidget):
         return all_removed
 
     def get_steam_directory(self):
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Valve\Steam") as key:
-                steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
-                return steam_path.replace("/", "\\")
-        except Exception as e:
-            self.error_signal.emit(f"[ERRO] Falha ao obter diretório do Steam: {e}")
-            return None
+        """Obtém diretório do Steam usando função utilitária"""
+        steam_path = get_steam_directory()
+        if not steam_path:
+            self.error_signal.emit("[ERRO] Falha ao obter diretório do Steam")
+        return steam_path
 
     def try_remove_file(self, file_path):
         if not os.path.exists(file_path):
@@ -510,38 +506,8 @@ class softwarerei(QMainWindow):
         super().paintEvent(event)
 
     def key(self):
-        def get_disk_serial():
-            try:
-                volume_name_buffer = ctypes.create_unicode_buffer(1024)
-                file_system_name_buffer = ctypes.create_unicode_buffer(1024)
-                serial_number = ctypes.c_ulong()
-                ctypes.windll.kernel32.GetVolumeInformationW(
-                    ctypes.c_wchar_p("C:\\"),
-                    volume_name_buffer,
-                    ctypes.sizeof(volume_name_buffer),
-                    ctypes.byref(serial_number),
-                    None,
-                    None,
-                    file_system_name_buffer,
-                    ctypes.sizeof(file_system_name_buffer),
-                )
-                return str(serial_number.value)
-            except Exception:
-                return "UNKNOWN_DISK"
-
-        def get_mac():
-            for iface, addrs in psutil.net_if_addrs().items():
-                for addr in addrs:
-                    if getattr(psutil, "AF_LINK", 17) == addr.family:
-                        mac = addr.address.replace(":", "")
-                        if mac and mac != "000000000000":
-                            return mac
-            return "UNKNOWN_MAC"
-
-        disk_id = get_disk_serial()
-        mac_id = get_mac()
-        raw = f"{disk_id}_{mac_id}"
-        self.key_extract = hashlib.sha256(raw.encode()).hexdigest().upper()[:24]
+        """Gera HWID único usando função utilitária"""
+        self.key_extract = generate_hwid()
 
     def generate_unique_code(self, checked=False):
         """Copia HWID para clipboard (F1)"""

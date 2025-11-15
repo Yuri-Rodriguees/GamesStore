@@ -1,17 +1,14 @@
 import os
 import sys
-import datax
-import xcore
 import updater
 from uxmod import softwarerei
 from PyQt5.QtGui import QColor
-from version import __version__
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication
 
-def main():
-    app = QApplication.instance() or QApplication(sys.argv)
-    
+
+def setup_dark_palette(app):
+    """Configura a paleta de cores escura para a aplicação"""
     dark_palette = app.palette()
     dark_palette.setColor(dark_palette.Window, QColor(31, 31, 31))
     dark_palette.setColor(dark_palette.WindowText, Qt.white)
@@ -27,6 +24,11 @@ def main():
     dark_palette.setColor(dark_palette.Highlight, QColor(100, 180, 255))
     dark_palette.setColor(dark_palette.HighlightedText, Qt.black)
     app.setPalette(dark_palette)
+
+
+def main():
+    app = QApplication.instance() or QApplication(sys.argv)
+    setup_dark_palette(app)
     
     window = softwarerei()
     window.show()

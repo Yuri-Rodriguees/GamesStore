@@ -1,10 +1,10 @@
-import requests
 import os
 import sys
-import subprocess
 import tempfile
-from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QMessageBox
+import requests
+import subprocess
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QProgressBar, QMessageBox
 
 # versão inicial software
 GITHUB_REPO = "Yuri-Rodriguees/GamesStore"

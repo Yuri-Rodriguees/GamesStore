@@ -1,136 +1,59 @@
+"""
+Games Store - Core Module
+==========================
+Módulo principal da aplicação Games Store, responsável pela interface gráfica,
+download e instalação de jogos, gerenciamento de biblioteca e integração com Steam.
+"""
+# Imports da biblioteca padrão
 import os
 import stat
-import rc
 import re
 import sys
 import json
 import time
 import shutil
-import psutil
-import ctypes
-import winreg
-import updater
 import zipfile
 import tempfile
-import requests
 import datetime
 import subprocess
-import urllib.request
 from pathlib import Path
+
+# Imports de terceiros
+import psutil
+import requests
+
+# Imports locais
+import rc
+import updater
 from version import __version__
-from urllib.parse import urlparse
+from utils import (
+    get_safe_download_dir, get_log_directory, log_message,
+    get_steam_directory, SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE, remove_readonly
+)
+from ui_components import TitleBar, CircularProgressBar
 
-from PyQt5.QtNetwork import QNetworkRequest, QNetworkAccessManager, QNetworkReply
-
+# Imports PyQt5 - Core
 from PyQt5.QtCore import (
     Qt, QUrl, QSize, QMimeData, QPoint, QPropertyAnimation, QEasingCurve, 
     QTimer, pyqtSignal, QThread, QRect, QRectF, pyqtProperty, QEventLoop, 
     QObject, QRunnable, QThreadPool, QPointF, pyqtSlot as Slot
 )
 
+# Imports PyQt5 - GUI
 from PyQt5.QtGui import (
-    QFont, QIcon, QDesktopServices, QDragEnterEvent, QDropEvent, QColor, 
+    QFont, QFontMetrics, QIcon, QDesktopServices, QDragEnterEvent, QDropEvent, QColor, 
     QPalette, QPen, QLinearGradient, QPainter, QPainterPath, QPixmap
 )
 
+# Imports PyQt5 - Widgets
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton, QLabel, QVBoxLayout, QHBoxLayout, 
     QLineEdit, QFrame, QScrollArea, QStackedWidget, QListWidget, QFileDialog, 
     QMessageBox, QGraphicsBlurEffect, QGraphicsColorizeEffect, 
     QGraphicsOpacityEffect, QProgressBar, QGraphicsDropShadowEffect,
-    QDialog,  
-    QListWidgetItem,  
-    QSizePolicy, 
-    QCheckBox,
-    QTextEdit,
-    QComboBox,
-    QSpinBox, 
-    QSystemTrayIcon, 
-    QMenu,  
-    QAction,
-    QGridLayout
+    QDialog, QListWidgetItem, QSizePolicy, QCheckBox,
+    QTextEdit, QComboBox, QSpinBox, QSystemTrayIcon, QMenu, QAction, QGridLayout
 )
-
-try:
-    from config import SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE
-except ImportError:
-    SECRET_KEY = os.getenv('SECRET_KEY', '')
-    if isinstance(SECRET_KEY, str):
-        SECRET_KEY = SECRET_KEY.encode()
-
-    API_URL = os.getenv('API_URL', '')
-    API_URL_SITE = os.getenv('API_URL_SITE', '')
-    AUTH_CODE = os.getenv('AUTH_CODE', '')
-
-if getattr(sys, 'frozen', False):
-    if not all([SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE]):
-        pass
-
-def get_safe_download_dir():
-    """Retorna diretório temporário seguro do sistema"""
-    try:
-        temp_base = Path(tempfile.gettempdir()) / "GameStore_Temp"
-        temp_base.mkdir(parents=True, exist_ok=True)
-        
-        test_file = temp_base / ".test"
-        test_file.touch()
-        test_file.unlink()
-        
-        return temp_base
-    except Exception as e:
-        # log_message(f"Erro ao usar temp: {e}")
-        script_dir = Path(__file__).parent / "temp_downloads"
-        script_dir.mkdir(parents=True, exist_ok=True)
-        return script_dir
-
-def get_log_directory():
-    """Retorna o diretório de logs no AppData"""
-    try:
-        if sys.platform == "win32":
-            appdata = Path.home() / "AppData/Roaming"
-        elif sys.platform == "linux":
-            appdata = Path.home() / ".local/share"
-        elif sys.platform == "darwin":
-            appdata = Path.home() / "Library/Application Support"
-        else:
-            appdata = Path.home()
-        
-        log_dir = appdata / "GamesStoreLauncher" / "logs"
-        log_dir.mkdir(parents=True, exist_ok=True)
-        return log_dir
-    except Exception as e:
-        # Fallback para pasta temporária se falhar
-        temp_dir = Path(tempfile.gettempdir()) / "GamesStoreLauncher" / "logs"
-        temp_dir.mkdir(parents=True, exist_ok=True)
-        return temp_dir
-
-def resource_path(relative_path):
-    """Retorna o caminho absoluto para recursos, funciona em dev e PyInstaller"""
-    try:
-        # PyInstaller cria uma pasta temporária e armazena o caminho em _MEIPASS
-        base_path = sys._MEIPASS
-    except Exception:
-        base_path = os.path.dirname(os.path.abspath(__file__))
-    
-    return os.path.join(base_path, relative_path)
-
-def log_message(message):
-    """Registra mensagens no arquivo de log (compatível com .exe)"""
-    try:
-        if getattr(sys, 'frozen', False):
-            log_dir = Path(os.getenv('APPDATA')) / "GamesStoreLauncher" / "logs"
-        else:
-            log_dir = Path(__file__).parent / "logs"
-        
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_path = log_dir / 'log.txt'
-        
-        with open(log_path, 'a', encoding='utf-8') as f:
-            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            f.write(f"[{timestamp}] {message}\n")
-    except Exception as e:
-        # Fallback silencioso para evitar crash
-        print(f"[LOG] {message}")
 
 # ================================
 # WORKERS E THREADS
@@ -322,10 +245,19 @@ class DownloadWorker(QRunnable):
                     if not winrar_path:
                         raise Exception("WinRAR não encontrado")
                     
+                    # Usar flags adequadas para .exe não fechar o processo pai
+                    is_frozen = getattr(sys, 'frozen', False)
+                    creation_flags = 0
+                    if is_frozen and sys.platform == 'win32':
+                        creation_flags = subprocess.CREATE_NO_WINDOW
+                    
                     subprocess.run(
                         [winrar_path, 'x', '-ibck', '-inul', str(filepath), str(temp_dir)],
                         check=True,
-                        timeout=300
+                        timeout=300,
+                        creationflags=creation_flags,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL
                     )
                     log_message("Extração RAR concluída")
                 
@@ -489,6 +421,7 @@ class DownloadWorker(QRunnable):
             log_message(f"Erro ao registrar jogo: {e}")
 
 class DownloadThread(QThread):
+    """Thread legada para downloads - usar DownloadWorker preferencialmente"""
     progress_updated = pyqtSignal(int)
     download_complete = pyqtSignal(bool)
 
@@ -499,145 +432,27 @@ class DownloadThread(QThread):
 
     def run(self):
         try:
-            urllib.request.urlretrieve(
-                self.url,
-                self.filename,
-                reporthook=self.update_progress
-            )
+            response = requests.get(self.url, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            total_size = int(response.headers.get('content-length', 0))
+            downloaded = 0
+            
+            with open(self.filename, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_size > 0:
+                            progress = int((downloaded / total_size) * 100)
+                            self.progress_updated.emit(progress)
+            
             self.download_complete.emit(True)
         except Exception as e:
             print(f"Erro no download: {str(e)}")
             self.download_complete.emit(False)
 
-    def update_progress(self, block_num, block_size, total_size):
-        if total_size > 0:
-            progress = int((block_num * block_size * 100) / total_size)
-            self.progress_updated.emit(progress)
-
-class TitleBar(QFrame):
-    def __init__(self, parent):
-        super().__init__(parent)
-        self.setStyleSheet("background-color: #222; padding: 5px; border-top-left-radius: 10px; border-top-right-radius: 10px;")
-        self.setFixedHeight(40)
-
-        title_layout = QHBoxLayout(self)
-        title_layout.setContentsMargins(10, 0, 10, 0)
-        
-        self.setWindowIcon(QIcon(":/imgs/icon.ico"))
-        
-        self.lbl_title = QLabel("Games Store")
-        self.lbl_title.setFont(QFont("Arial", 10))
-        self.lbl_title.setStyleSheet("color: white;")
-        self.lbl_title.setAlignment(Qt.AlignLeft)
-        
-        self.btn_close = QPushButton("✕")
-        self.btn_close.setFixedSize(30, 30)
-        self.btn_close.setStyleSheet("background: none; color: white; font-size: 14px; border: none;")
-        self.btn_close.clicked.connect(parent.close)
-        self.btn_close.setFocusPolicy(Qt.NoFocus)
-        
-        title_layout.addWidget(self.lbl_title)
-        title_layout.addStretch()
-        title_layout.addWidget(self.btn_close)
-        
-class CircularProgressBar(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.setFixedSize(120, 120)
-        self._value = 0
-        self._speed = 0.0
-        self._downloaded = 0
-        self._total = 0
-        self.max_value = 100
-        self.progress_width = 10
-        self.progress_rounded_cap = True
-        self.progress_color = QColor(75, 215, 100)
-        self.text_color = QColor(255, 255, 255)
-        self.font_percent = QFont("Arial", 14, QFont.Bold)
-        self.font_speed = QFont("Arial", 9)
-        
-        self.shadow_effect = QGraphicsDropShadowEffect(self)
-        self.shadow_effect.setBlurRadius(20)
-        self.shadow_effect.setXOffset(0)
-        self.shadow_effect.setYOffset(0)
-        self.shadow_effect.setColor(QColor(75, 215, 100, 150))
-        self.setGraphicsEffect(self.shadow_effect)
-        
-    @pyqtProperty(int)
-    def value(self):
-        return self._value
-
-    @value.setter
-    def value(self, value):
-        if value != self._value:
-            self._value = max(0, min(value, self.max_value))
-            self.update()
-    
-    def set_value(self, value):
-        """Define o progresso (0-100)"""
-        self.value = value
-    
-    def set_speed(self, speed):
-        """Define a velocidade em MB/s"""
-        self._speed = speed
-        self.update()
-    
-    def set_downloaded(self, downloaded, total):
-        """Define bytes baixados e total"""
-        self._downloaded = downloaded
-        self._total = total
-        self.update()
-
-    def paintEvent(self, event):
-        painter = QPainter(self)
-        painter.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
-        
-        side = min(self.width(), self.height())
-        rect = QRectF(0, 0, side, side)
-        
-        # Fundo
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(QColor(40, 40, 40))
-        painter.drawEllipse(rect)
-        
-        # Progresso
-        pen = QPen(self.progress_color, self.progress_width)
-        if self.progress_rounded_cap:
-            pen.setCapStyle(Qt.RoundCap)
-        
-        painter.setPen(pen)
-        start_angle = 90 * 16
-        span_angle = -int(self._value * 3.6 * 16)
-
-        margin = self.progress_width / 2
-        arc_rect = QRectF(
-            margin, margin,
-            side - self.progress_width,
-            side - self.progress_width
-        )
-        
-        painter.drawArc(arc_rect, start_angle, span_angle)
-        
-        # Texto - Porcentagem
-        painter.setFont(self.font_percent)
-        painter.setPen(self.text_color)
-        
-        percent_rect = QRectF(0, side * 0.35, side, side * 0.2)
-        painter.drawText(percent_rect, Qt.AlignCenter, f"{self._value}%")
-        
-        # Texto - Velocidade
-        if self._speed > 0:
-            painter.setFont(self.font_speed)
-            painter.setPen(QColor(200, 200, 200))
-            speed_rect = QRectF(0, side * 0.55, side, side * 0.15)
-            painter.drawText(speed_rect, Qt.AlignCenter, f"{self._speed:.1f} MB/s")
-        
-        # Texto - Tamanho
-        if self._total > 0:
-            painter.setFont(self.font_speed)
-            painter.setPen(QColor(180, 180, 180))
-            size_rect = QRectF(0, side * 0.68, side, side * 0.15)
-            painter.drawText(size_rect, Qt.AlignCenter, f"{self._downloaded}/{self._total} MB")
+# TitleBar e CircularProgressBar movidos para ui_components.py
 
 class DownloadProgressOverlay(QDialog):
     def __init__(self, parent, game_id, game_name, download_url, steam_path):
@@ -877,27 +692,76 @@ class ImageLoaderSignals(QObject):
     error = pyqtSignal()
 
 class ImageLoader(QRunnable):
-    """Worker para carregar imagens com múltiplos fallbacks"""
-    def __init__(self, urls):
+    """Worker otimizado para carregar imagens com cache e múltiplos fallbacks"""
+    def __init__(self, urls, cache_key=None, max_size=(300, 300), parent_cache=None):
         super().__init__()
         self.urls = urls if isinstance(urls, list) else [urls]
+        self.cache_key = cache_key
+        self.max_size = max_size
+        self.parent_cache = parent_cache
         self.signals = ImageLoaderSignals()
     
     @Slot()
     def run(self):
-        """Tenta carregar de múltiplas URLs até conseguir"""
+        """Tenta carregar de múltiplas URLs com cache"""
+        # Verificar cache primeiro se tiver chave
+        if self.cache_key and self.parent_cache and self.cache_key in self.parent_cache:
+            cached_pixmap = self.parent_cache[self.cache_key]
+            if cached_pixmap and not cached_pixmap.isNull():
+                self.signals.finished.emit(cached_pixmap)
+                return
+        
+        # Tentar carregar de URLs
         for url in self.urls:
             try:
-                response = requests.get(url, timeout=5)
+                # Timeout reduzido e headers para melhor performance
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
+                    'Accept': 'image/webp,image/apng,image/*,*/*;q=0.8',
+                    'Accept-Encoding': 'gzip, deflate, br'
+                }
+                response = requests.get(url, timeout=8, headers=headers, stream=True)
                 
                 if response.status_code == 200:
+                    # Carregar apenas primeiros bytes para verificar formato
+                    content = response.content
+                    
                     pixmap = QPixmap()
-                    if pixmap.loadFromData(response.content):
+                    if pixmap.loadFromData(content):
+                        # Redimensionar se necessário para economizar memória
+                        if self.max_size and (pixmap.width() > self.max_size[0] or pixmap.height() > self.max_size[1]):
+                            pixmap = pixmap.scaled(
+                                self.max_size[0], self.max_size[1],
+                                Qt.KeepAspectRatio,
+                                Qt.SmoothTransformation
+                            )
+                        
+                        # Salvar no cache se tiver chave
+                        if self.cache_key and self.parent_cache is not None:
+                            # Limpar cache se exceder limite (FIFO)
+                            # O tamanho máximo está no objeto pai (GameApp), não no dict
+                            if '__parent_app' in self.parent_cache:
+                                parent_app = self.parent_cache['__parent_app']
+                                max_size = getattr(parent_app, '_max_cache_size', 100)
+                                # Contar apenas chaves de imagens (excluindo __parent_app)
+                                image_keys = [k for k in self.parent_cache.keys() if k != '__parent_app']
+                                if len(image_keys) >= max_size:
+                                    # Remover primeiro item (mais antigo), ignorando __parent_app
+                                    for key in image_keys:
+                                        del self.parent_cache[key]
+                                        break
+                            
+                            self.parent_cache[self.cache_key] = pixmap
+                        
                         self.signals.finished.emit(pixmap)
                         return
                     
-            except:
-                pass
+            except requests.exceptions.Timeout:
+                continue
+            except requests.exceptions.RequestException:
+                continue
+            except Exception:
+                continue
         
         self.signals.error.emit()
 
@@ -1044,12 +908,27 @@ class OverlayModal(QWidget):
         
         if details.get('background') or details.get('header_image'):
             bg_url = details.get('background') or details.get('header_image')
-            loader = ImageLoader(bg_url)
-            loader.signals.finished.connect(
-                lambda pixmap: header_image.setPixmap(
-                    pixmap.scaled(900, 250, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                )
+            cache_key = f"modal_header_{self.game_id}"
+            loader = ImageLoader(
+                bg_url,
+                cache_key=cache_key,
+                max_size=(950, 300),
+                parent_cache=self.parent_widget.image_cache
             )
+            def on_header_loaded(pixmap):
+                try:
+                    if header_image and not pixmap.isNull():
+                        scaled = pixmap.scaled(
+                            900, 250,
+                            Qt.KeepAspectRatioByExpanding,
+                            Qt.SmoothTransformation
+                        )
+                        header_image.setPixmap(scaled)
+                except (RuntimeError, AttributeError):
+                    pass
+            
+            loader.signals.finished.connect(on_header_loaded)
+            loader.signals.error.connect(lambda: None)
             self.parent_widget.thread_pool.start(loader)
         
         header_layout.addWidget(header_image)
@@ -1347,15 +1226,32 @@ class InstalledGameModal(QWidget):
         header_image.setAlignment(Qt.AlignCenter)
         header_image.setStyleSheet("background: #1a1a1a;")
         
-        # Carregar imagem
+        # Carregar imagem com cache
         if self.game_id:
+            cache_key = f"header_{self.game_id}"
             url = f"https://cdn.cloudflare.steamstatic.com/steam/apps/{self.game_id}/header.jpg"
-            loader = ImageLoader(url)
-            loader.signals.finished.connect(
-                lambda pixmap: header_image.setPixmap(
-                    pixmap.scaled(800, 200, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-                )
+            
+            loader = ImageLoader(
+                url,
+                cache_key=cache_key,
+                max_size=(900, 250),  # Limitar para header modal
+                parent_cache=self.parent_widget.image_cache
             )
+            
+            def on_header_loaded(pixmap):
+                try:
+                    if header_image and not pixmap.isNull():
+                        scaled = pixmap.scaled(
+                            800, 200,
+                            Qt.KeepAspectRatioByExpanding,
+                            Qt.SmoothTransformation
+                        )
+                        header_image.setPixmap(scaled)
+                except (RuntimeError, AttributeError):
+                    pass
+            
+            loader.signals.finished.connect(on_header_loaded)
+            loader.signals.error.connect(lambda: None)
             self.parent_widget.thread_pool.start(loader)
         
         header_layout.addWidget(header_image)
@@ -1648,10 +1544,19 @@ class ManualInstallWorker(QRunnable):
                 if not winrar_path:
                     raise Exception("WinRAR não encontrado. Instale o WinRAR para extrair arquivos .rar")
                 
+                # Usar flags adequadas para .exe não fechar o processo pai
+                is_frozen = getattr(sys, 'frozen', False)
+                creation_flags = 0
+                if is_frozen and sys.platform == 'win32':
+                    creation_flags = subprocess.CREATE_NO_WINDOW
+                
                 subprocess.run(
                     [winrar_path, 'x', '-ibck', '-inul', str(self.filepath), str(temp_dir)],
                     check=True,
-                    timeout=300
+                    timeout=300,
+                    creationflags=creation_flags,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL
                 )
                 self.signals.progress.emit(70)
                 log_message("Extração RAR concluída")
@@ -1905,8 +1810,12 @@ class GameApp(QWidget):
         self.api_url_site = API_URL_SITE
         self.auth_code = AUTH_CODE
         
+        # Cache de imagens otimizado (limite de 100 imagens)
         self.image_cache = {}
+        self.image_cache['__parent_app'] = self  # Referência para acessar _max_cache_size
+        self._max_cache_size = 100  # Limite do cache
         
+        # Thread pool único para todas as operações assíncronas
         self.thread_pool = QThreadPool()
         self.thread_pool.setMaxThreadCount(4)
         
@@ -1930,9 +1839,6 @@ class GameApp(QWidget):
         self.drag_over = False
         self.steam_path = None
         self.selected_file_path = None
-        
-        # Thread pool para downloads
-        self.thread_pool = QThreadPool()
         
         # Inicializar interface
         self.init_ui()
@@ -2330,7 +2236,8 @@ class GameApp(QWidget):
     
     def create_game_card(self, game_name, game_id):
         card = QFrame()
-        card.setFixedSize(180, 255)
+        # Altura ajustada para acomodar nomes de até 2 linhas (255 -> 275)
+        card.setFixedSize(180, 275)
         card.setCursor(Qt.PointingHandCursor)
         card.setProperty("spotlight", False)
 
@@ -2364,19 +2271,42 @@ class GameApp(QWidget):
         """)
         self.load_game_poster(image, game_id)
 
-        name = QLabel(game_name)
-        name.setFont(QFont("Arial", 10, QFont.Bold))
+        # Truncar nome muito longo e permitir quebra em até 2 linhas
+        font = QFont("Arial", 10, QFont.Bold)
+        name = QLabel()
+        name.setFont(font)
+        
+        # Calcular largura disponível (card width - padding - margins)
+        available_width = 164  # mesma largura da imagem
+        
+        # Verificar se precisa truncar
+        metrics = QFontMetrics(font)
+        elided_text = metrics.elidedText(game_name, Qt.ElideRight, available_width)
+        
+        # Se o texto foi truncado ou muito longo, usar elipsis
+        if len(game_name) > 20:  # Nomes com mais de 20 caracteres
+            # Tentar quebrar em 2 linhas primeiro
+            name.setText(game_name)
+            name.setWordWrap(True)
+            name.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            # Altura dinâmica para até 2 linhas
+            name.setMinimumHeight(38)
+            name.setMaximumHeight(55)  # Permite até 2 linhas
+        else:
+            # Nomes curtos, usar elided se necessário
+            name.setText(elided_text)
+            name.setWordWrap(False)
+            name.setAlignment(Qt.AlignCenter)
+            name.setFixedHeight(38)
+        
         name.setStyleSheet("""
             QLabel {
                 color: white;
-                padding: 10px 6px 6px 6px;
+                padding: 8px 4px 4px 4px;
                 background: transparent;
                 border-radius: 8px;
             }
         """)
-        name.setAlignment(Qt.AlignCenter)
-        name.setWordWrap(True)
-        name.setFixedHeight(38)
 
         layout.addWidget(image)
         layout.addSpacing(3)
@@ -2392,10 +2322,15 @@ class GameApp(QWidget):
         self.update()
 
     def load_game_poster(self, label, app_id):
-        """Carrega poster para cards de jogos na home"""
+        """Carrega poster otimizado para cards de jogos na home com cache"""
+        # Placeholder otimizado
         label.setText("🎮")
         label.setStyleSheet(label.styleSheet() + " font-size: 48px; color: #47D64E;")
         
+        # Cache key única para este app_id
+        cache_key = f"game_poster_{app_id}"
+        
+        # URLs otimizadas (menores primeiro para carregamento rápido)
         urls = [
             f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
             f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
@@ -2405,15 +2340,30 @@ class GameApp(QWidget):
         
         def on_success(pixmap):
             try:
-                if label and not label.isHidden():
-                    scaled = pixmap.scaled(180, 200, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                if label and not label.isHidden() and not pixmap.isNull():
+                    # Escalar apenas uma vez com tamanho final
+                    scaled = pixmap.scaled(
+                        164, 200,
+                        Qt.KeepAspectRatioByExpanding,
+                        Qt.SmoothTransformation
+                    )
                     label.setPixmap(scaled)
-            except RuntimeError:
+            except (RuntimeError, AttributeError):
                 pass
         
-        loader = ImageLoader(urls)
+        def on_error():
+            # Manter placeholder se falhar
+            pass
+        
+        # Carregar com cache e tamanho máximo otimizado
+        loader = ImageLoader(
+            urls,
+            cache_key=cache_key,
+            max_size=(200, 250),  # Limitar tamanho para economizar memória
+            parent_cache=self.image_cache
+        )
         loader.signals.finished.connect(on_success)
-        loader.signals.error.connect(lambda: None)
+        loader.signals.error.connect(on_error)
         
         self.thread_pool.start(loader)
 
@@ -2558,7 +2508,8 @@ class GameApp(QWidget):
 
     def create_netflix_search_card(self, game_name, game_id):
         card = QFrame()
-        card.setFixedSize(180, 250)
+        # Altura ajustada para acomodar nomes de até 2 linhas (250 -> 270)
+        card.setFixedSize(180, 270)
         card.setCursor(Qt.PointingHandCursor)
         card.setProperty("spotlight", False)
         card.setStyleSheet("""
@@ -2591,18 +2542,42 @@ class GameApp(QWidget):
         """)
         self.load_search_poster_safe(poster, game_id)
         
-        name = QLabel(game_name[:25] + '...' if len(game_name) > 25 else game_name)
-        name.setFont(QFont("Arial", 10, QFont.Bold))
+        # Truncar nome muito longo e permitir quebra em até 2 linhas
+        font = QFont("Arial", 10, QFont.Bold)
+        name = QLabel()
+        name.setFont(font)
+        
+        # Calcular largura disponível
+        available_width = 164
+        
+        # Verificar se precisa truncar
+        metrics = QFontMetrics(font)
+        
+        # Se o texto foi truncado ou muito longo, usar quebra de linha
+        if len(game_name) > 20:  # Nomes com mais de 20 caracteres
+            # Tentar quebrar em 2 linhas primeiro
+            name.setText(game_name)
+            name.setWordWrap(True)
+            name.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            # Altura dinâmica para até 2 linhas
+            name.setMinimumHeight(38)
+            name.setMaximumHeight(55)  # Permite até 2 linhas
+        else:
+            # Nomes curtos, usar elided se necessário
+            elided_text = metrics.elidedText(game_name, Qt.ElideRight, available_width)
+            name.setText(elided_text)
+            name.setWordWrap(False)
+            name.setAlignment(Qt.AlignCenter)
+            name.setFixedHeight(38)
+        
         name.setStyleSheet("""
             QLabel {
                 color: white;
-                padding: 10px 6px 8px 6px;
+                padding: 8px 4px 4px 4px;
                 background: transparent;
                 border-radius: 6px;
             }
         """)
-        name.setAlignment(Qt.AlignCenter)
-        name.setFixedHeight(38)
         
         layout.addWidget(poster)
         layout.addSpacing(6)
@@ -2612,11 +2587,15 @@ class GameApp(QWidget):
         return card
 
     def load_search_poster_safe(self, label, app_id):
-        """Carrega poster com múltiplos fallbacks"""
+        """Carrega poster otimizado com cache e múltiplos fallbacks"""
         # Placeholder
         label.setText("🎮")
         label.setStyleSheet(label.styleSheet() + " font-size: 48px; color: #47D64E;")
         
+        # Cache key para busca
+        cache_key = f"search_poster_{app_id}"
+        
+        # URLs otimizadas (prioridade para imagens menores)
         urls = [
             f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
             f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
@@ -2624,12 +2603,11 @@ class GameApp(QWidget):
             f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/header.jpg",
             f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/capsule_231x87.jpg",
             f"https://cdn.akamai.steamstatic.com/steam/apps/{app_id}/capsule_231x87.jpg",
-            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/capsule_467x181.jpg",
         ]
         
         def safe_set_pixmap(pixmap, target_label):
             try:
-                if target_label and not target_label.isHidden():
+                if target_label and not target_label.isHidden() and not pixmap.isNull():
                     # Escalar mantendo proporção
                     scaled = pixmap.scaled(
                         200, 180, 
@@ -2644,12 +2622,18 @@ class GameApp(QWidget):
                             border-top-right-radius: 8px;
                         }
                     """)
-            except RuntimeError:
+            except (RuntimeError, AttributeError):
                 pass  # Label deletado
         
-        loader = ImageLoader(urls)
+        # Carregar com cache e tamanho máximo
+        loader = ImageLoader(
+            urls,
+            cache_key=cache_key,
+            max_size=(250, 200),  # Tamanho máximo para economizar memória
+            parent_cache=self.image_cache
+        )
         loader.signals.finished.connect(lambda pixmap: safe_set_pixmap(pixmap, label))
-        loader.signals.error.connect(lambda: print(f"[POSTER] ❌ Todas URLs falharam para {app_id}"))
+        loader.signals.error.connect(lambda: None)  # Silencioso em erro
         
         self.thread_pool.start(loader)
     
@@ -2814,9 +2798,16 @@ class GameApp(QWidget):
             except RuntimeError:
                 pass
         
-        loader = ImageLoader(urls)
+        # Cache para thumbnails
+        cache_key = f"thumb_{app_id}"
+        loader = ImageLoader(
+            urls,
+            cache_key=cache_key,
+            max_size=(150, 70),  # Thumbnail pequeno
+            parent_cache=self.image_cache
+        )
         loader.signals.finished.connect(on_success)
-        loader.signals.error.connect(lambda: print(f"[THUMB] ❌ Falhou para {app_id}"))
+        loader.signals.error.connect(lambda: None)  # Silencioso
         
         self.thread_pool.start(loader)
     
@@ -3393,19 +3384,44 @@ class GameApp(QWidget):
             }
         """)
         
-        display_name = game_name[:30] + '...' if len(game_name) > 30 else game_name
-        name = QLabel(display_name)
-        name.setFont(QFont("Arial", 11, QFont.Bold))
+        # Truncar nome muito longo e permitir quebra em até 2 linhas
+        from PyQt5.QtGui import QFontMetrics
+        
+        font = QFont("Arial", 11, QFont.Bold)
+        name = QLabel()
+        name.setFont(font)
+        
+        # Calcular largura disponível (card é maior aqui)
+        available_width = 180
+        
+        # Verificar se precisa truncar
+        metrics = QFontMetrics(font)
+        
+        # Se o texto foi truncado ou muito longo, usar quebra de linha
+        if len(game_name) > 25:  # Nomes com mais de 25 caracteres
+            # Tentar quebrar em 2 linhas primeiro
+            name.setText(game_name)
+            name.setWordWrap(True)
+            name.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
+            # Altura dinâmica para até 2 linhas
+            name.setMinimumHeight(40)
+            name.setMaximumHeight(60)  # Permite até 2 linhas
+        else:
+            # Nomes curtos, usar elided se necessário
+            elided_text = metrics.elidedText(game_name, Qt.ElideRight, available_width)
+            name.setText(elided_text)
+            name.setWordWrap(False)
+            name.setAlignment(Qt.AlignCenter)
+            name.setFixedHeight(40)
+        
         name.setStyleSheet("""
             QLabel {
                 color: white;
-                padding: 10px 8px 6px 8px;
+                padding: 8px 6px 4px 6px;
                 background: transparent;
                 border-radius: 8px;
             }
         """)
-        name.setAlignment(Qt.AlignCenter)
-        name.setFixedHeight(40)
         
         layout.addWidget(poster)
         layout.addSpacing(7)
@@ -3462,14 +3478,11 @@ class GameApp(QWidget):
     # ========================================================================
     
     def get_steam_directory(self):
-        """Detecta diretório da Steam"""
-        try:
-            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\\Valve\\Steam") as key:
-                steam_path, _ = winreg.QueryValueEx(key, "SteamPath")
-                self.steam_path = steam_path.replace("/", "\\\\")
-                return self.steam_path
-        except:
-            return None
+        """Detecta diretório da Steam usando função utilitária"""
+        steam_path = get_steam_directory()
+        if steam_path:
+            self.steam_path = steam_path.replace("/", "\\")
+        return self.steam_path
     
     def after_download_success(self, game_id):
         # Troca a tela para jogos instalados e recarrega a lista
@@ -3497,20 +3510,77 @@ class GameApp(QWidget):
 
     def restart_steam(self):
         """Reinicia a Steam sem abrir CMD visível"""
-        for proc in psutil.process_iter(['name']):
+        # Obter PID do próprio processo para evitar encerrá-lo
+        current_pid = os.getpid()
+        current_process = psutil.Process(current_pid)
+        current_name = current_process.name().lower() if hasattr(current_process, 'name') else ''
+        
+        steam_process_names = ["steam.exe", "steamwebhelper.exe", "steamservice.exe", "gameoverlayui.exe"]
+        
+        for proc in psutil.process_iter(['pid', 'name']):
             try:
-                if proc.info['name'] and 'steam.exe' in proc.info['name'].lower():
-                    proc.kill()
+                # Evitar encerrar o próprio processo
+                if proc.info['pid'] == current_pid:
+                    continue
+                    
+                proc_name = proc.info['name'].lower() if proc.info['name'] else ""
+                
+                # Verificar se é um processo Steam
+                if any(steam_name in proc_name for steam_name in steam_process_names):
+                    try:
+                        proc_obj = psutil.Process(proc.info['pid'])
+                        proc_obj.terminate()
+                        # Aguardar um pouco antes de forçar kill
+                        try:
+                            proc_obj.wait(timeout=3)
+                        except psutil.TimeoutExpired:
+                            proc_obj.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
             except Exception:
                 pass
+        
         QTimer.singleShot(1800, self.open_steam_url)
 
     def open_steam_url(self):
+        """Abre a Steam usando URL scheme"""
         try:
-            os.startfile("steam://open/main")
-        except AttributeError:
-            subprocess.Popen(['xdg-open', 'steam://open/main'],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            # Detectar se está rodando como .exe
+            is_frozen = getattr(sys, 'frozen', False)
+            
+            if is_frozen:
+                # Quando executado como .exe, usar subprocess com flags adequadas
+                # DETACHED_PROCESS previne que o processo filho encerre o pai
+                DETACHED_PROCESS = 0x00000008
+                CREATE_NEW_PROCESS_GROUP = 0x00000200
+                flags = DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP
+                
+                # Usar cmd /c para executar o comando de forma isolada
+                subprocess.Popen(
+                    ['cmd', '/c', 'start', '', 'steam://open/main'],
+                    creationflags=flags,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    close_fds=True
+                )
+            else:
+                # Em desenvolvimento, usar os.startfile normalmente
+                os.startfile("steam://open/main")
+        except (AttributeError, OSError):
+            # Fallback para Linux/Mac
+            try:
+                subprocess.Popen(
+                    ['xdg-open', 'steam://open/main'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    start_new_session=True
+                )
+            except Exception:
+                pass
             
     def ask_restart_steam(self):
         reply = QMessageBox.question(
