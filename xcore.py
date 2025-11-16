@@ -1902,7 +1902,7 @@ class ManualInstallScreen(QWidget):
         
         layout.addLayout(buttons_layout)
     
-    def select_file(self):
+    def select_file(self, checked=False):
         """Abre dialog para selecionar arquivo"""
         try:
             file_path, _ = QFileDialog.getOpenFileName(
@@ -1929,7 +1929,7 @@ class ManualInstallScreen(QWidget):
             log_message(f"[MANUAL_INSTALL_SCREEN] Erro ao selecionar arquivo: {e}", include_traceback=True)
             QMessageBox.critical(self, "Erro", f"Erro ao selecionar arquivo:\n{str(e)}")
     
-    def start_install(self):
+    def start_install(self, checked=False):
         """Inicia instalação manual"""
         try:
             if not self.selected_file_path:
@@ -2201,7 +2201,7 @@ class InstalledGameScreen(QWidget):
         
         container_layout.addWidget(footer)
     
-    def launch_game(self):
+    def launch_game(self, checked=False):
         """Lança o jogo via Steam"""
         try:
             steam_url = f"steam://rungameid/{self.game_id}"
@@ -2211,7 +2211,7 @@ class InstalledGameScreen(QWidget):
             print(f"[LAUNCH] Erro: {e}")
             QMessageBox.warning(self.parent_app, "Erro", f"Não foi possível iniciar o jogo:\n{e}")
     
-    def uninstall_game(self):
+    def uninstall_game(self, checked=False):
         """Desinstala o jogo (remove json e arquivos físicos)"""
         reply = QMessageBox.question(
             self.parent_app,
