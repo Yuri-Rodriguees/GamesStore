@@ -1739,15 +1739,11 @@ class ManualInstallScreen(QWidget):
     def __init__(self, parent):
         super().__init__()
         try:
-            log_message("[MANUAL_INSTALL_SCREEN] Iniciando criação da tela...")
-            
             if parent is None:
                 raise ValueError("Parent não pode ser None")
             
             self.parent_app = parent
             self.selected_file_path = None
-            
-            log_message("[MANUAL_INSTALL_SCREEN] Variáveis básicas inicializadas")
             
             # Layout principal
             layout = QVBoxLayout(self)
@@ -1755,7 +1751,7 @@ class ManualInstallScreen(QWidget):
             layout.setSpacing(0)
             
             # Container principal com fundo
-            self.main_container = QFrame(self)
+            self.main_container = QFrame()
             self.main_container.setStyleSheet("""
                 QFrame {
                     background: #1a1a1a;
@@ -1941,12 +1937,10 @@ class ManualInstallScreen(QWidget):
             
             layout.addWidget(self.main_container)
             
-            log_message("[MANUAL_INSTALL_SCREEN] Tela criada com sucesso!")
-            
         except Exception as e:
-            log_message(f"[MANUAL_INSTALL_SCREEN] ERRO CRÍTICO ao criar tela: {e}", include_traceback=True)
             import traceback
             traceback.print_exc()
+            log_message(f"[MANUAL_INSTALL_SCREEN] ERRO ao criar tela: {e}", include_traceback=True)
             # Criar tela de erro simples
             error_layout = QVBoxLayout(self)
             error_label = QLabel(f"Erro ao carregar tela de instalação manual:\n{str(e)}")
@@ -2734,8 +2728,7 @@ class GameApp(QWidget):
         self.pages.addWidget(self.tela_jogos)
         self.pages.addWidget(self.tela_dlcs)
         
-        # Criar tela de instalação manual após inicialização completa
-        QTimer.singleShot(100, self._init_manual_install_screen)
+        # Tela será criada quando necessário (lazy loading)
         
         content.addWidget(self.pages, 4)
         main_layout.addLayout(content)
@@ -2746,16 +2739,25 @@ class GameApp(QWidget):
         self.setup_dlcs()
     
     def _init_manual_install_screen(self):
-        """Inicializa a tela de instalação manual após a UI estar completa"""
+        """Inicializa a tela de instalação manual de forma segura"""
         try:
             if self.tela_manual_install is None:
+                # Verificar se self está totalmente inicializado
+                if not hasattr(self, 'pages'):
+                    raise RuntimeError("GameApp não está totalmente inicializado")
+                
+                # Criar tela
                 self.tela_manual_install = ManualInstallScreen(self)
+                
+                # Adicionar ao stack
                 self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
-                log_message(f"[MANUAL_INSTALL] Tela criada e adicionada no índice: {self.manual_install_index}")
         except Exception as e:
-            log_message(f"[MANUAL_INSTALL] Erro ao inicializar tela: {e}", include_traceback=True)
             import traceback
             traceback.print_exc()
+            log_message(f"[MANUAL_INSTALL] Erro ao inicializar tela: {e}", include_traceback=True)
+            # Não fazer raise para evitar crash - apenas logar o erro
+            self.tela_manual_install = None
+            self.manual_install_index = None
     
     def create_sidebar(self):
         """Cria menu lateral moderno"""
@@ -4053,17 +4055,17 @@ class GameApp(QWidget):
         """Abre tela de instalação manual de arquivo usando setCurrentIndex"""
         try:
             # Se a tela ainda não foi criada, criar agora
-            if self.tela_manual_install is None:
-                log_message("[MANUAL_INSTALL] Tela não criada ainda, criando agora...")
+            if self.tela_manual_install is None or self.manual_install_index is None:
                 self._init_manual_install_screen()
             
             # Navegar para a tela usando o índice
             if self.manual_install_index is not None:
                 self.pages.setCurrentIndex(self.manual_install_index)
             else:
-                log_message("[MANUAL_INSTALL] Erro: índice não definido")
-                QMessageBox.warning(self, "Erro", "Tela de instalação manual não foi inicializada corretamente.")
+                QMessageBox.warning(self, "Erro", "Não foi possível abrir a tela de instalação manual.")
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             log_message(f"[MANUAL_INSTALL] Erro ao abrir tela: {e}", include_traceback=True)
             QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}")
         
