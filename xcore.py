@@ -512,8 +512,6 @@ class DownloadThread(QThread):
             print(f"Erro no download: {str(e)}")
             self.download_complete.emit(False)
 
-# TitleBar e CircularProgressBar movidos para ui_components.py
-
 class SimpleProgressBar(QWidget):
     """Barra de progresso simples e otimizada"""
     def __init__(self, parent=None):
@@ -543,7 +541,6 @@ class SimpleProgressBar(QWidget):
         # Borda
         painter.setPen(QColor(60, 60, 60))
         painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
-
 
 class DownloadProgressOverlay(QDialog):
     """Dialog simples de progresso de download"""
@@ -976,6 +973,10 @@ class OverlayModal(QWidget):
         self.details = details
         self.parent_widget = parent
         
+        # CRÍTICO: Configurar flags para evitar que feche o software
+        # Não usar WindowCloseButtonHint para evitar que o X feche o software
+        self.setWindowFlags(Qt.Widget | Qt.FramelessWindowHint)
+        
         # Configurar como overlay
         self.setGeometry(parent.rect())
         self.setAttribute(Qt.WA_StyledBackground)
@@ -1283,25 +1284,40 @@ class OverlayModal(QWidget):
         self.raise_()
     
     def close_modal(self):
-        """Fecha o modal de forma segura"""
+        """Fecha o modal de forma segura - apenas esconde, não destrói"""
         try:
             log_message("[OVERLAY_MODAL] Fechando modal...")
-            # Apenas esconder o modal, não fechar o widget pai
-            self.hide()
-            self.closed.emit()
+            
+            # CRÍTICO: Apenas esconder o widget, NUNCA chamar close() ou destroy()
+            # Isso evita que o widget pai (software principal) seja fechado
+            if self.isVisible():
+                self.hide()
+                log_message("[OVERLAY_MODAL] Modal ocultado com hide()")
+            
+            # Emitir signal de fechado
+            try:
+                self.closed.emit()
+                log_message("[OVERLAY_MODAL] Signal closed.emit enviado")
+            except:
+                pass
+            
             log_message("[OVERLAY_MODAL] Modal fechado com sucesso")
         except Exception as e:
-            log_message(f"[OVERLAY_MODAL] Erro ao fechar modal: {e}")
+            log_message(f"[OVERLAY_MODAL] Erro ao fechar modal: {e}", include_traceback=True)
     
     def closeEvent(self, event):
-        """Override para garantir que apenas o modal seja fechado"""
+        """Override para garantir que apenas o modal seja fechado, nunca o software"""
         try:
-            log_message("[OVERLAY_MODAL] closeEvent chamado - apenas escondendo modal")
-            event.ignore()  # Ignorar o evento de fechamento padrão
-            self.close_modal()  # Usar nosso método seguro
+            log_message("[OVERLAY_MODAL] closeEvent interceptado - ignorando evento padrão")
+            # CRÍTICO: Sempre ignorar o evento para não fechar o software
+            event.ignore()
+            
+            # Usar nosso método seguro que apenas esconde
+            self.close_modal()
         except Exception as e:
             log_message(f"[OVERLAY_MODAL] Erro no closeEvent: {e}")
-            event.ignore()  # Sempre ignorar para não fechar o software
+            # SEMPRE ignorar o evento, mesmo em caso de erro
+            event.ignore()
     
     def resizeEvent(self, event):
         """Reposiciona modal ao redimensionar janela"""
