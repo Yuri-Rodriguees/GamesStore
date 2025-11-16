@@ -1737,7 +1737,7 @@ class ManualInstallScreen(QWidget):
     """Tela de instalação manual de jogo (convertida de modal para tela real)"""
     
     def __init__(self, parent):
-        super().__init__(parent)
+        super().__init__()
         try:
             self.parent_app = parent
             self.selected_file_path = None
@@ -2003,7 +2003,7 @@ class InstalledGameScreen(QWidget):
     """Tela para gerenciar jogo instalado (convertida de modal para tela)"""
     
     def __init__(self, parent, game_name, game_info):
-        super().__init__(parent)
+        super().__init__()
         try:
             self.game_name = game_name
             self.game_info = game_info
@@ -2717,10 +2717,15 @@ class GameApp(QWidget):
         self.tela_detalhes = None  # Será criada quando necessário
         self.tela_manual_install = None  # Será criada quando necessário
         self.tela_installed_game = None  # Será criada quando necessário
+        self.manual_install_index = None  # Índice da tela de instalação manual
         
         self.pages.addWidget(self.tela_home)
         self.pages.addWidget(self.tela_jogos)
         self.pages.addWidget(self.tela_dlcs)
+        
+        # Criar tela de instalação manual na inicialização
+        self.tela_manual_install = ManualInstallScreen(self)
+        self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
         
         content.addWidget(self.pages, 4)
         main_layout.addLayout(content)
@@ -4023,23 +4028,23 @@ class GameApp(QWidget):
             traceback.print_exc()
 
     def open_manual_install_dialog(self):
-        """Abre tela de instalação manual de arquivo"""
+        """Abre tela de instalação manual de arquivo usando setCurrentIndex"""
         try:
-            # Remover tela anterior se existir
-            if self.tela_manual_install:
-                try:
-                    self.pages.removeWidget(self.tela_manual_install)
-                    self.tela_manual_install.deleteLater()
-                except:
-                    pass
-            
-            # Criar nova tela de instalação manual
-            self.tela_manual_install = ManualInstallScreen(self)
-            
-            # Adicionar ao stack e trocar para ela
-            install_index = self.pages.addWidget(self.tela_manual_install)
-            self.pages.setCurrentIndex(install_index)
-            
+            if self.manual_install_index is not None:
+                self.pages.setCurrentIndex(self.manual_install_index)
+            else:
+                # Fallback: se por algum motivo o índice não foi definido
+                log_message("[MANUAL_INSTALL] Índice não encontrado, recriando tela...")
+                if self.tela_manual_install:
+                    try:
+                        self.pages.removeWidget(self.tela_manual_install)
+                        self.tela_manual_install.deleteLater()
+                    except:
+                        pass
+                
+                self.tela_manual_install = ManualInstallScreen(self)
+                self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
+                self.pages.setCurrentIndex(self.manual_install_index)
         except Exception as e:
             log_message(f"[MANUAL_INSTALL] Erro ao abrir tela: {e}", include_traceback=True)
             QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}")
