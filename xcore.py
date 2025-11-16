@@ -43,7 +43,7 @@ from PyQt5.QtCore import (
 # Imports PyQt5 - GUI
 from PyQt5.QtGui import (
     QFont, QFontMetrics, QIcon, QDesktopServices, QDragEnterEvent, QDropEvent, QColor, 
-    QPalette, QPen, QLinearGradient, QPainter, QPainterPath, QPixmap
+    QPalette, QPen, QLinearGradient, QPainter, QPainterPath, QPixmap, QCloseEvent
 )
 
 # Imports PyQt5 - Widgets
@@ -1233,10 +1233,7 @@ class OverlayModal(QWidget):
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5ce36c, stop:1 #47D64E);
                 }
             """)
-            # Iniciar download sem fechar o modal principal
-            # O DownloadProgressOverlay será fechado quando o download terminar
             download_btn.clicked.connect(lambda: self.parent_widget.start_download_from_api(game_id, details.get('nome', 'Jogo')))
-            # NÃO fechar o modal principal - apenas o DownloadProgressOverlay fecha
         else:
             download_btn.setText("❌ Não Disponível")
             download_btn.setEnabled(False)
@@ -1286,9 +1283,25 @@ class OverlayModal(QWidget):
         self.raise_()
     
     def close_modal(self):
-        """Fecha o modal"""
-        self.hide()
-        self.closed.emit()
+        """Fecha o modal de forma segura"""
+        try:
+            log_message("[OVERLAY_MODAL] Fechando modal...")
+            # Apenas esconder o modal, não fechar o widget pai
+            self.hide()
+            self.closed.emit()
+            log_message("[OVERLAY_MODAL] Modal fechado com sucesso")
+        except Exception as e:
+            log_message(f"[OVERLAY_MODAL] Erro ao fechar modal: {e}")
+    
+    def closeEvent(self, event):
+        """Override para garantir que apenas o modal seja fechado"""
+        try:
+            log_message("[OVERLAY_MODAL] closeEvent chamado - apenas escondendo modal")
+            event.ignore()  # Ignorar o evento de fechamento padrão
+            self.close_modal()  # Usar nosso método seguro
+        except Exception as e:
+            log_message(f"[OVERLAY_MODAL] Erro no closeEvent: {e}")
+            event.ignore()  # Sempre ignorar para não fechar o software
     
     def resizeEvent(self, event):
         """Reposiciona modal ao redimensionar janela"""
