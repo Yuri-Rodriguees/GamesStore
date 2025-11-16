@@ -1739,8 +1739,15 @@ class ManualInstallScreen(QWidget):
     def __init__(self, parent):
         super().__init__()
         try:
+            log_message("[MANUAL_INSTALL_SCREEN] Iniciando criação da tela...")
+            
+            if parent is None:
+                raise ValueError("Parent não pode ser None")
+            
             self.parent_app = parent
             self.selected_file_path = None
+            
+            log_message("[MANUAL_INSTALL_SCREEN] Variáveis básicas inicializadas")
             
             # Layout principal
             layout = QVBoxLayout(self)
@@ -1934,8 +1941,12 @@ class ManualInstallScreen(QWidget):
             
             layout.addWidget(self.main_container)
             
+            log_message("[MANUAL_INSTALL_SCREEN] Tela criada com sucesso!")
+            
         except Exception as e:
-            log_message(f"[MANUAL_INSTALL_SCREEN] Erro ao criar tela: {e}", include_traceback=True)
+            log_message(f"[MANUAL_INSTALL_SCREEN] ERRO CRÍTICO ao criar tela: {e}", include_traceback=True)
+            import traceback
+            traceback.print_exc()
             # Criar tela de erro simples
             error_layout = QVBoxLayout(self)
             error_label = QLabel(f"Erro ao carregar tela de instalação manual:\n{str(e)}")
@@ -2722,10 +2733,6 @@ class GameApp(QWidget):
         self.pages.addWidget(self.tela_home)
         self.pages.addWidget(self.tela_jogos)
         self.pages.addWidget(self.tela_dlcs)
-        
-        # Criar tela de instalação manual na inicialização
-        self.tela_manual_install = ManualInstallScreen(self)
-        self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
         
         content.addWidget(self.pages, 4)
         main_layout.addLayout(content)
@@ -4030,24 +4037,72 @@ class GameApp(QWidget):
     def open_manual_install_dialog(self):
         """Abre tela de instalação manual de arquivo usando setCurrentIndex"""
         try:
-            if self.manual_install_index is not None:
-                self.pages.setCurrentIndex(self.manual_install_index)
-            else:
-                # Fallback: se por algum motivo o índice não foi definido
-                log_message("[MANUAL_INSTALL] Índice não encontrado, recriando tela...")
-                if self.tela_manual_install:
-                    try:
+            import traceback
+            
+            # Se a tela já existe e tem índice, apenas navega
+            if self.manual_install_index is not None and self.tela_manual_install:
+                try:
+                    self.pages.setCurrentIndex(self.manual_install_index)
+                    return
+                except Exception as nav_err:
+                    log_message(f"[MANUAL_INSTALL] Erro ao navegar para tela existente: {nav_err}")
+                    # Se falhar, recria a tela
+                    self.manual_install_index = None
+                    self.tela_manual_install = None
+            
+            # Criar tela se não existir
+            log_message("[MANUAL_INSTALL] Criando tela de instalação manual...")
+            
+            # Remover tela anterior se existir (limpeza)
+            if self.tela_manual_install:
+                try:
+                    if self.manual_install_index is not None:
                         self.pages.removeWidget(self.tela_manual_install)
-                        self.tela_manual_install.deleteLater()
-                    except:
-                        pass
-                
+                    self.tela_manual_install.deleteLater()
+                except Exception as cleanup_err:
+                    log_message(f"[MANUAL_INSTALL] Erro ao limpar tela anterior: {cleanup_err}")
+                finally:
+                    self.tela_manual_install = None
+                    self.manual_install_index = None
+            
+            # Criar nova tela
+            try:
+                log_message("[MANUAL_INSTALL] Instanciando ManualInstallScreen...")
                 self.tela_manual_install = ManualInstallScreen(self)
+                log_message("[MANUAL_INSTALL] ManualInstallScreen criado com sucesso")
+            except Exception as create_err:
+                log_message(f"[MANUAL_INSTALL] Erro ao criar ManualInstallScreen: {create_err}", include_traceback=True)
+                traceback.print_exc()
+                raise
+            
+            # Adicionar ao stack
+            try:
+                log_message("[MANUAL_INSTALL] Adicionando ao QStackedWidget...")
                 self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
+                log_message(f"[MANUAL_INSTALL] Tela adicionada no índice: {self.manual_install_index}")
+            except Exception as add_err:
+                log_message(f"[MANUAL_INSTALL] Erro ao adicionar ao stack: {add_err}", include_traceback=True)
+                traceback.print_exc()
+                raise
+            
+            # Navegar para a tela
+            try:
+                log_message(f"[MANUAL_INSTALL] Navegando para índice {self.manual_install_index}...")
                 self.pages.setCurrentIndex(self.manual_install_index)
+                log_message("[MANUAL_INSTALL] Tela aberta com sucesso!")
+            except Exception as nav_err:
+                log_message(f"[MANUAL_INSTALL] Erro ao navegar para tela: {nav_err}", include_traceback=True)
+                traceback.print_exc()
+                raise
+            
         except Exception as e:
-            log_message(f"[MANUAL_INSTALL] Erro ao abrir tela: {e}", include_traceback=True)
-            QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}")
+            log_message(f"[MANUAL_INSTALL] Erro crítico ao abrir tela: {e}", include_traceback=True)
+            import traceback
+            traceback.print_exc()
+            try:
+                QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}\n\nVerifique o log para mais detalhes.")
+            except:
+                print(f"[CRITICAL] Não foi possível mostrar mensagem de erro: {e}")
         
     def load_installed_games(self):
         """Carrega jogos com grid 5 colunas"""
