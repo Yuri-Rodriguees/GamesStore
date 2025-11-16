@@ -1909,7 +1909,8 @@ class ManualInstallScreen(QWidget):
                 self,
                 "Selecionar Arquivo de Jogo",
                 os.path.expanduser("~"),
-                "Arquivos de Jogo (*.zip *.rar);;Todos os Arquivos (*.*)"
+                "Arquivos de Jogo (*.zip *.rar);;Todos os Arquivos (*.*)",
+                options=QFileDialog.DontUseNativeDialog
             )
             
             if file_path:
@@ -1952,7 +1953,6 @@ class ManualInstallScreen(QWidget):
         except Exception as e:
             log_message(f"[MANUAL_INSTALL_SCREEN] Erro ao iniciar instalação: {e}", include_traceback=True)
             QMessageBox.critical(self, "Erro", f"Erro ao iniciar instalação:\n{str(e)}")
-
 
 class InstalledGameScreen(QWidget):
     """Tela para gerenciar jogo instalado (convertida de modal para tela)"""
@@ -2685,7 +2685,6 @@ class GameApp(QWidget):
         self.setup_home()
         self.setup_jogos()
         self.setup_dlcs()
-    
     
     def create_sidebar(self):
         """Cria menu lateral moderno"""

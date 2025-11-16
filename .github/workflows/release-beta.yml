@@ -58,6 +58,7 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
+        cache: 'pip'  # Cache pip para builds mais rápidos
     
     - name: Install dependencies
       run: |
@@ -84,6 +85,14 @@ jobs:
         if (Test-Path "datax.cp311-win_amd64.pyd") { Copy-Item "datax.cp311-win_amd64.pyd" "datax.pyd" -Force }
       shell: pwsh
     
+    - name: Verify compiled modules
+      run: |
+        if (-not (Test-Path "uxmod.pyd")) { Write-Error "uxmod.pyd não encontrado"; exit 1 }
+        if (-not (Test-Path "xcore.pyd")) { Write-Error "xcore.pyd não encontrado"; exit 1 }
+        if (-not (Test-Path "datax.pyd")) { Write-Error "datax.pyd não encontrado"; exit 1 }
+        Write-Host "✅ Todos os módulos compilados encontrados"
+      shell: pwsh
+    
     - name: Build EXE
       run: |
         pyinstaller --noconfirm --onefile --windowed `
@@ -102,15 +111,30 @@ jobs:
           --hidden-import "PyQt5.QtCore" `
           --hidden-import "PyQt5.QtGui" `
           --hidden-import "PyQt5.QtWidgets" `
+          --hidden-import "PyQt5.sip" `
+          --hidden-import "PyQt5.QtPrintSupport" `
           --name "GamesStore" main.py
+      shell: pwsh
+    
+    - name: Verify EXE created
+      run: |
+        if (-not (Test-Path "dist/GamesStore.exe")) {
+          Write-Error "❌ GamesStore.exe não foi criado"
+          exit 1
+        }
+        $fileInfo = Get-Item "dist/GamesStore.exe"
+        Write-Host "✅ EXE criado com sucesso"
+        Write-Host "   Tamanho: $($fileInfo.Length / 1MB) MB"
       shell: pwsh
     
     - name: Create PRERELEASE (NÃO APARECE PARA USUÁRIOS)
       uses: softprops/action-gh-release@v2
       with:
         files: dist/GamesStore.exe
-        prerelease: true  # ⚠️ CRÍTICO: Marca como prerelease
+        prerelease: true
         draft: false
+        tag_name: ${{ github.ref_name }}
+        name: "🧪 Beta ${{ github.ref_name }}"
         body: |
           ## ⚠️ VERSÃO BETA - NÃO PÚBLICA
           
@@ -123,5 +147,12 @@ jobs:
           ### Testadores
           Se você recebeu este link, pode testar esta versão.
           Reporte bugs encontrados.
+          
+          ### Changelog
+          - Correções no ManualInstallScreen
+          - Melhorias de estabilidade no QFileDialog
+          
+          **Build:** ${{ github.sha }}
+          **Data:** ${{ github.event.head_commit.timestamp }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
