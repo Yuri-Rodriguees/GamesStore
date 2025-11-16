@@ -540,43 +540,17 @@ class DownloadProgressOverlay(QDialog):
             self._is_closing = True
             log_message(f"[DOWNLOAD SUCCESS] Flag _is_closing definida. Parent app: {self._parent_app is not None}")
             
-            # CRÍTICO: Fechar dialog IMEDIATAMENTE antes de qualquer outra coisa
-            # Isso previne que o fechamento cause problemas em .exe
-            log_message("[DOWNLOAD SUCCESS] Fechando dialog IMEDIATAMENTE...")
-            try:
-                if self.isVisible():
-                    log_message("[DOWNLOAD SUCCESS] Dialog visível, chamando hide() primeiro...")
-                    self.hide()  # Ocultar primeiro
-                    log_message("[DOWNLOAD SUCCESS] hide() chamado com sucesso")
-                    
-                    # Aguardar um frame para garantir que hide() foi processado
-                    QTimer.singleShot(10, lambda: self._finalize_dialog_close(game_id))
-                else:
-                    log_message("[DOWNLOAD SUCCESS] Dialog já não está visível, chamando callback direto")
-                    # Se já não está visível, chamar callback direto
-                    QTimer.singleShot(50, lambda: self._safe_call_after_success(game_id))
-            except Exception as e:
-                log_message(f"[DOWNLOAD SUCCESS] Erro ao fechar dialog: {e}, tentando callback mesmo assim", include_traceback=True)
-                # Mesmo com erro ao fechar, tentar chamar callback
-                QTimer.singleShot(100, lambda: self._safe_call_after_success(game_id))
+            # Armazenar referência do parent_app antes de fechar
+            parent_app = self._parent_app
             
-        except Exception as e:
-            log_message(f"[DOWNLOAD SUCCESS] ERRO crítico ao processar sucesso do download: {e}", include_traceback=True)
-            # Tentar fechar dialog mesmo com erro
+            # CRÍTICO: Fechar dialog PRIMEIRO com done() para fazer exec_() retornar corretamente
+            # Isso evita que exec_() retorne prematuramente em .exe
+            log_message("[DOWNLOAD SUCCESS] Fechando dialog com done()...")
             try:
-                if self.isVisible():
-                    self.hide()
-            except:
-                pass
-    
-    def _finalize_dialog_close(self, game_id):
-        """Finaliza o fechamento do dialog e chama callbacks"""
-        try:
-            log_message("[DOWNLOAD SUCCESS] Finalizando fechamento do dialog...")
-            # Agora fechar definitivamente com done() ou accept()
-            try:
+                # Chamar done() diretamente SEM usar hide() antes
+                # hide() faz exec_() retornar antes do done(), causando problemas no .exe
                 self.done(QDialog.Accepted)
-                log_message("[DOWNLOAD SUCCESS] done(QDialog.Accepted) chamado")
+                log_message("[DOWNLOAD SUCCESS] done(QDialog.Accepted) chamado com sucesso")
             except Exception as e1:
                 log_message(f"[DOWNLOAD SUCCESS] Erro ao chamar done(): {e1}")
                 try:
@@ -584,27 +558,43 @@ class DownloadProgressOverlay(QDialog):
                     log_message("[DOWNLOAD SUCCESS] accept() chamado como fallback")
                 except Exception as e2:
                     log_message(f"[DOWNLOAD SUCCESS] Erro ao chamar accept(): {e2}")
+                    # Última tentativa: esconder
+                    try:
+                        self.hide()
+                    except:
+                        pass
             
-            # Agora chamar callback do pai
-            if self._parent_app and hasattr(self._parent_app, 'after_download_success'):
-                log_message(f"[DOWNLOAD SUCCESS] Chamando after_download_success para game_id={game_id}")
-                QTimer.singleShot(50, lambda: self._safe_call_after_success(game_id))
-            else:
-                log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível")
+            # AGORA chamar callback APÓS fechar o dialog
+            # Usar QTimer para garantir execução no thread principal de forma segura
+            def call_after_success():
+                try:
+                    log_message(f"[DOWNLOAD SUCCESS] Executando after_download_success para game_id={game_id}")
+                    if parent_app and hasattr(parent_app, 'after_download_success'):
+                        # Chamar diretamente no thread principal via QTimer
+                        parent_app.after_download_success(game_id)
+                        log_message("[DOWNLOAD SUCCESS] after_download_success chamado com sucesso")
+                    else:
+                        log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível")
+                except Exception as e:
+                    log_message(f"[DOWNLOAD SUCCESS] ERRO ao chamar after_download_success: {e}", include_traceback=True)
+            
+            # Agendar callback com pequeno delay para garantir que o dialog foi fechado
+            QTimer.singleShot(50, call_after_success)
+            
         except Exception as e:
-            log_message(f"[DOWNLOAD SUCCESS] ERRO ao finalizar fechamento: {e}", include_traceback=True)
-    
-    def _safe_call_after_success(self, game_id):
-        """Chama after_download_success de forma segura com logs"""
-        try:
-            log_message(f"[DOWNLOAD SUCCESS] Chamando after_download_success para game_id={game_id}")
-            if self._parent_app and hasattr(self._parent_app, 'after_download_success'):
-                self._parent_app.after_download_success(game_id)
-                log_message("[DOWNLOAD SUCCESS] after_download_success chamado com sucesso")
-            else:
-                log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível ao chamar after_download_success")
-        except Exception as e:
-            log_message(f"[DOWNLOAD SUCCESS] ERRO ao chamar after_download_success: {e}", include_traceback=True)
+            log_message(f"[DOWNLOAD SUCCESS] ERRO crítico ao processar sucesso do download: {e}", include_traceback=True)
+            # Tentar fechar dialog mesmo com erro
+            try:
+                if self.isVisible():
+                    try:
+                        self.done(QDialog.Accepted)
+                    except:
+                        try:
+                            self.accept()
+                        except:
+                            self.hide()
+            except:
+                pass
     
     def close_dialog_safely(self):
         """Fecha o dialog de forma segura - método legado, não usado mais"""
@@ -2572,23 +2562,47 @@ class GameApp(QWidget):
             # Guardar referência para evitar garbage collection
             self._current_download_dialog = progress_dialog
             
-            result = progress_dialog.exec_()
-            log_message(f"[START_DOWNLOAD] exec_() retornou com resultado: {result}")
+            try:
+                result = progress_dialog.exec_()
+                log_message(f"[START_DOWNLOAD] exec_() retornou com resultado: {result}")
+            except Exception as exec_error:
+                log_message(f"[START_DOWNLOAD] ERRO durante exec_(): {exec_error}", include_traceback=True)
+                # Tentar fechar dialog mesmo com erro
+                try:
+                    if progress_dialog.isVisible():
+                        progress_dialog.hide()
+                except:
+                    pass
+            
+            # Processar eventos pendentes antes de limpar referência
+            # Isso dá tempo para callbacks pendentes serem executados
+            from PyQt5.QtWidgets import QApplication
+            QApplication.processEvents()
             
             # Garantir que o dialog foi fechado corretamente
-            if progress_dialog.isVisible():
-                log_message("[START_DOWNLOAD] Dialog ainda visível após exec_(), ocultando...")
-                progress_dialog.hide()
-                log_message("[START_DOWNLOAD] Dialog ocultado")
+            try:
+                if progress_dialog.isVisible():
+                    log_message("[START_DOWNLOAD] Dialog ainda visível após exec_(), ocultando...")
+                    progress_dialog.hide()
+                    log_message("[START_DOWNLOAD] Dialog ocultado")
+            except Exception as e:
+                log_message(f"[START_DOWNLOAD] Erro ao ocultar dialog: {e}")
             
-            # Limpar referência
-            self._current_download_dialog = None
+            # Limpar referência de forma segura
+            try:
+                self._current_download_dialog = None
+                log_message("[START_DOWNLOAD] Referência limpa")
+            except Exception as e:
+                log_message(f"[START_DOWNLOAD] Erro ao limpar referência: {e}")
+            
             log_message("[START_DOWNLOAD] Download concluído - método retornando normalmente")
         except Exception as e:
             log_message(f"[START_DOWNLOAD] ERRO ao exibir dialog de download: {e}", include_traceback=True)
             import traceback
             traceback.print_exc()
             try:
+                # Limpar referência mesmo com erro
+                self._current_download_dialog = None
                 QMessageBox.critical(self, "Erro", f"Erro ao iniciar download:\n{str(e)}")
             except Exception as e2:
                 log_message(f"[START_DOWNLOAD] ERRO ao mostrar QMessageBox: {e2}")

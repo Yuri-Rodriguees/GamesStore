@@ -1,6 +1,7 @@
 import os
 import sys
 import tempfile
+import time
 import requests
 import subprocess
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
@@ -235,8 +236,27 @@ def perform_update(parent, download_url):
     
     downloader = UpdateDownloader(download_url)
     downloader.progress.connect(progress_dialog.update_progress)
-    downloader.finished.connect(lambda f: QTimer.singleShot(1000, lambda: install_update(f, progress_dialog)))
-    downloader.error.connect(lambda e: (progress_dialog.close(), QMessageBox.critical(parent, "Erro", e)))
+    
+    def on_download_finished(temp_file):
+        """Callback quando o download termina com sucesso"""
+        try:
+            # Aguardar um pouco para garantir que o arquivo foi completamente salvo
+            QTimer.singleShot(1500, lambda: install_update(temp_file, progress_dialog))
+        except Exception as e:
+            log(f"ERRO no callback de download: {e}")
+            progress_dialog.close()
+            QMessageBox.critical(parent, "Erro", f"Erro ao processar download: {e}")
+    
+    def on_download_error(error_msg):
+        """Callback quando ocorre erro no download"""
+        try:
+            progress_dialog.close()
+            QMessageBox.critical(parent, "Erro no Download", f"Falha ao baixar atualização:\n\n{error_msg}")
+        except Exception as e:
+            log(f"ERRO ao exibir erro de download: {e}")
+    
+    downloader.finished.connect(on_download_finished)
+    downloader.error.connect(on_download_error)
     downloader.start()
     
     parent._updater_thread = downloader
@@ -244,22 +264,59 @@ def perform_update(parent, download_url):
 
 
 def install_update(temp_file, progress_dialog):
-    current_exe = sys.executable
-    
-    batch_script = f"""@echo off
+    try:
+        current_exe = sys.executable
+        
+        batch_script = f"""@echo off
 timeout /t 2 /nobreak >nul
 move /y "{temp_file}" "{current_exe}"
 start "" "{current_exe}"
 exit
 """
-    
-    batch_file = os.path.join(tempfile.gettempdir(), "update_installer.bat")
-    with open(batch_file, 'w') as f:
-        f.write(batch_script)
-    
-    progress_dialog.close()
-    subprocess.Popen(batch_file, shell=True)
-    sys.exit(0)
+        
+        batch_file = os.path.join(tempfile.gettempdir(), "update_installer.bat")
+        with open(batch_file, 'w') as f:
+            f.write(batch_script)
+        
+        # Atualizar UI antes de fechar
+        progress_dialog.status_label.setText("Finalizando...")
+        progress_dialog.progress_bar.setValue(100)
+        progress_dialog.update()
+        
+        # Fechar o diálogo de forma segura
+        if progress_dialog.isVisible():
+            progress_dialog.close()
+        
+        # Aguardar um pouco para garantir que o diálogo fechou
+        time.sleep(0.5)
+        
+        # Executar o batch e aguardar um pouco antes de sair
+        process = subprocess.Popen(batch_file, shell=True, creationflags=subprocess.CREATE_NO_WINDOW)
+        
+        # Aguardar um pouco para garantir que o processo foi iniciado
+        time.sleep(0.5)
+        
+        # Fechar todas as janelas antes de sair
+        app = progress_dialog.parent()
+        if app:
+            for widget in app.allWidgets():
+                if widget != progress_dialog:
+                    try:
+                        widget.close()
+                    except:
+                        pass
+        
+        # Sair do programa
+        sys.exit(0)
+        
+    except Exception as e:
+        log(f"ERRO ao instalar atualização: {e}")
+        # Se houver erro, tentar ao menos notificar
+        try:
+            QMessageBox.critical(progress_dialog.parent(), "Erro na Instalação", 
+                               f"Erro ao instalar atualização:\n{e}\n\nO arquivo foi baixado em:\n{temp_file}")
+        except:
+            pass
 
 
 def check_and_update(parent, show_no_update_message=False):
