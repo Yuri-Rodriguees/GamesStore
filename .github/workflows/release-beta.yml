@@ -28,7 +28,7 @@ jobs:
             exit 1
           fi
         done
-        echo "OK Módulos encontrados"
+        echo "✅ Módulos encontrados"
     
     - name: Upload modules
       uses: actions/upload-artifact@v4
@@ -58,7 +58,6 @@ jobs:
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
-        cache: 'pip'  # Cache pip para builds mais rápidos
     
     - name: Install dependencies
       run: |
@@ -87,10 +86,30 @@ jobs:
     
     - name: Verify compiled modules
       run: |
-        if (-not (Test-Path "uxmod.pyd")) { Write-Error "uxmod.pyd não encontrado"; exit 1 }
-        if (-not (Test-Path "xcore.pyd")) { Write-Error "xcore.pyd não encontrado"; exit 1 }
-        if (-not (Test-Path "datax.pyd")) { Write-Error "datax.pyd não encontrado"; exit 1 }
+        if (-not (Test-Path "uxmod.pyd")) { Write-Error "❌ uxmod.pyd não encontrado"; exit 1 }
+        if (-not (Test-Path "xcore.pyd")) { Write-Error "❌ xcore.pyd não encontrado"; exit 1 }
+        if (-not (Test-Path "datax.pyd")) { Write-Error "❌ datax.pyd não encontrado"; exit 1 }
         Write-Host "✅ Todos os módulos compilados encontrados"
+      shell: pwsh
+    
+    - name: Verify required files
+      run: |
+        $requiredFiles = @(
+          "config.py",
+          "version.py",
+          "updater.py",
+          "rc.py",
+          "main.py",
+          "assets/Images/icon.ico"
+        )
+        
+        foreach ($file in $requiredFiles) {
+          if (-not (Test-Path $file)) {
+            Write-Error "❌ Arquivo obrigatório não encontrado: $file"
+            exit 1
+          }
+          Write-Host "✅ $file"
+        }
       shell: pwsh
     
     - name: Build EXE
@@ -113,6 +132,14 @@ jobs:
           --hidden-import "PyQt5.QtWidgets" `
           --hidden-import "PyQt5.sip" `
           --hidden-import "PyQt5.QtPrintSupport" `
+          --hidden-import "requests" `
+          --hidden-import "bs4" `
+          --hidden-import "psutil" `
+          --hidden-import "dotenv" `
+          --hidden-import "curl_cffi" `
+          --hidden-import "urllib3" `
+          --hidden-import "certifi" `
+          --hidden-import "charset_normalizer" `
           --name "GamesStore" main.py
       shell: pwsh
     
@@ -124,14 +151,22 @@ jobs:
         }
         $fileInfo = Get-Item "dist/GamesStore.exe"
         Write-Host "✅ EXE criado com sucesso"
-        Write-Host "   Tamanho: $($fileInfo.Length / 1MB) MB"
+        Write-Host "   Tamanho: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
+        Write-Host "   Caminho: $($fileInfo.FullName)"
       shell: pwsh
+    
+    - name: Upload EXE as artifact (for testing)
+      uses: actions/upload-artifact@v4
+      with:
+        name: GamesStore-Beta-${{ github.ref_name }}
+        path: dist/GamesStore.exe
+        retention-days: 30
     
     - name: Create PRERELEASE (NÃO APARECE PARA USUÁRIOS)
       uses: softprops/action-gh-release@v2
       with:
         files: dist/GamesStore.exe
-        prerelease: true
+        prerelease: true  # ⚠️ CRÍTICO: Marca como prerelease
         draft: false
         tag_name: ${{ github.ref_name }}
         name: "🧪 Beta ${{ github.ref_name }}"
@@ -144,15 +179,25 @@ jobs:
           ❌ Não é recomendada para usuários finais
           ✅ Apenas para testadores com acesso ao link
           
-          ### Testadores
+          ### 🔍 Testadores
           Se você recebeu este link, pode testar esta versão.
           Reporte bugs encontrados.
           
-          ### Changelog
-          - Correções no ManualInstallScreen
-          - Melhorias de estabilidade no QFileDialog
+          ### 📝 Changelog
+          - ✅ Correções no ManualInstallScreen
+          - ✅ Melhorias de estabilidade no QFileDialog
+          - ✅ Hidden imports adicionados para PyQt5
+          - ✅ Dependências do requests e bs4 incluídas
           
-          **Build:** ${{ github.sha }}
-          **Data:** ${{ github.event.head_commit.timestamp }}
+          ### 🛠️ Informações Técnicas
+          - **Build:** `${{ github.sha }}`
+          - **Tag:** `${{ github.ref_name }}`
+          - **Python:** 3.11
+          - **Workflow:** ${{ github.run_number }}
+          
+          ### 🐛 Como reportar bugs
+          1. Execute o .exe pelo terminal (cmd/PowerShell)
+          2. Copie qualquer mensagem de erro
+          3. Reporte no Discord/Issues com prints
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
