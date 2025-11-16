@@ -3663,23 +3663,23 @@ class GameApp(QWidget):
                     
                     log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
                     # Carregar jogos após pequeno delay para garantir que a tela foi trocada
-                    QTimer.singleShot(100, lambda: self._load_and_show_spotlight(game_id))
+                    QTimer.singleShot(100, lambda: self._load_and_show_message(game_id))
                     log_message("[AFTER_DOWNLOAD] Troca de tela concluída")
                 except Exception as e:
                     log_message(f"[AFTER_DOWNLOAD] ERRO ao trocar tela: {e}", include_traceback=True)
-                    # Mesmo com erro, tentar perguntar sobre reiniciar Steam
-                    QTimer.singleShot(1000, self.ask_restart_steam)
+                    # Mesmo com erro, mostrar mensagem de sucesso
+                    QTimer.singleShot(500, lambda: self._show_success_message())
             
             # Agendar troca de tela com pequeno delay para garantir que o contexto anterior foi limpo
             QTimer.singleShot(100, switch_to_installed_games)
             log_message("[AFTER_DOWNLOAD] after_download_success concluído com sucesso")
         except Exception as e:
             log_message(f"[AFTER_DOWNLOAD] ERRO em after_download_success: {e}", include_traceback=True)
-            # Mesmo com erro, tentar perguntar sobre reiniciar Steam
-            QTimer.singleShot(1000, self.ask_restart_steam)
+            # Mesmo com erro, mostrar mensagem de sucesso
+            QTimer.singleShot(500, lambda: self._show_success_message())
     
-    def _load_and_show_spotlight(self, game_id):
-        """Carrega jogos instalados e mostra spotlight"""
+    def _load_and_show_message(self, game_id):
+        """Carrega jogos instalados e mostra mensagem de sucesso"""
         try:
             log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
             self.load_installed_games()
@@ -3690,36 +3690,31 @@ class GameApp(QWidget):
             
             log_message("[AFTER_DOWNLOAD] Jogos instalados carregados")
             
-            # (Opcional) SpotlightOverlay para destacar o card recém-instalado
-            # Usar QTimer para garantir que a UI foi atualizada antes de mostrar overlay
-            log_message("[AFTER_DOWNLOAD] Agendando spotlight e restart prompt")
-            QTimer.singleShot(300, lambda: self.show_spotlight_and_ask_restart(game_id))
+            # Mostrar mensagem de sucesso simples
+            QTimer.singleShot(200, lambda: self._show_success_message())
         except Exception as e:
             log_message(f"[AFTER_DOWNLOAD] ERRO ao carregar jogos: {e}", include_traceback=True)
-            # Mesmo com erro, tentar perguntar sobre reiniciar Steam
-            QTimer.singleShot(500, self.ask_restart_steam)
+            # Mesmo com erro, mostrar mensagem de sucesso
+            QTimer.singleShot(300, lambda: self._show_success_message())
     
-    def show_spotlight_and_ask_restart(self, game_id):
-        """Mostra spotlight e pergunta sobre reiniciar Steam"""
-        log_message(f"[SPOTLIGHT] Iniciando show_spotlight_and_ask_restart para game_id={game_id}")
-        
+    def _show_success_message(self):
+        """Mostra mensagem de sucesso e pergunta sobre reiniciar Steam"""
         try:
-            log_message("[SPOTLIGHT] Buscando card widget...")
-            card_widget = self.get_installed_game_card_widget_by_id(game_id)
-            if card_widget:
-                log_message("[SPOTLIGHT] Card encontrado, criando overlay...")
-                overlay = SpotlightOverlay(self, card_widget)
-                overlay.show()
-                log_message("[SPOTLIGHT] Overlay mostrado, agendando restart prompt")
-                QTimer.singleShot(2700, self.ask_restart_steam)
-            else:
-                log_message("[SPOTLIGHT] Card não encontrado, agendando restart prompt direto")
-                # Se não encontrar o card, apenas perguntar sobre reiniciar
-                QTimer.singleShot(700, self.ask_restart_steam)
-        except Exception as e:
-            log_message(f"[SPOTLIGHT] ERRO ao mostrar spotlight: {e}", include_traceback=True)
-            # Em caso de erro, apenas perguntar sobre reiniciar Steam
+            log_message("[AFTER_DOWNLOAD] Mostrando mensagem de sucesso...")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(
+                self,
+                "✅ Instalação Concluída",
+                "Jogo instalado com sucesso!\n\nReinicie a Steam para ver o jogo na biblioteca."
+            )
+            log_message("[AFTER_DOWNLOAD] Mensagem de sucesso exibida")
+            
+            # Perguntar sobre reiniciar Steam após um pequeno delay
             QTimer.singleShot(500, self.ask_restart_steam)
+        except Exception as e:
+            log_message(f"[AFTER_DOWNLOAD] ERRO ao mostrar mensagem: {e}", include_traceback=True)
+            # Em caso de erro, apenas perguntar sobre reiniciar Steam
+            QTimer.singleShot(300, self.ask_restart_steam)
 
     def get_installed_game_card_widget_by_id(self, game_id):
         for i in range(self.installed_games_layout.count()):
