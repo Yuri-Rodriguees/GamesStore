@@ -375,7 +375,6 @@ def download_and_install_winrar(signals=None):
             log_message(f"[WINRAR] Erro ao remover instalador: {e}")
         
         # Aguardar um pouco para garantir que o WinRAR foi instalado
-        import time
         time.sleep(2)
         
         # Verificar se foi instalado com sucesso
