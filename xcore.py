@@ -17,6 +17,7 @@ import zipfile
 import tempfile
 import datetime
 import subprocess
+import platform
 from pathlib import Path
 
 # Imports de terceiros
@@ -55,6 +56,369 @@ from PyQt5.QtWidgets import (
     QDialog, QListWidgetItem, QSizePolicy, QCheckBox,
     QTextEdit, QComboBox, QSpinBox, QSystemTrayIcon, QMenu, QAction, QGridLayout
 )
+
+# ================================
+# UTILITÁRIOS
+# ================================
+
+def find_winrar():
+    """Encontra o caminho do WinRAR instalado"""
+    winrar_paths = [
+        r"C:\Program Files\WinRAR\WinRAR.exe",
+        r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
+    ]
+    
+    for path in winrar_paths:
+        if os.path.exists(path):
+            return path
+    
+    return None
+
+def download_and_install_winrar(signals=None):
+    """
+    Baixa e instala o WinRAR PT-BR automaticamente
+    
+    Args:
+        signals: Objeto com signals para emitir progresso (opcional)
+    
+    Returns:
+        str: Caminho do WinRAR instalado ou None se falhar
+    """
+    try:
+        log_message("[WINRAR] Iniciando download e instalação do WinRAR PT-BR...")
+        
+        # Detectar arquitetura do sistema
+        is_64bit = platform.machine().endswith('64') or platform.architecture()[0] == '64bit'
+        
+        # URL do instalador WinRAR PT-BR (versão mais recente)
+        # Tentar múltiplas URLs possíveis
+        if is_64bit:
+            winrar_urls = [
+                "https://www.win-rar.com/fileadmin/winrar-versions/winrar-x64-611br.exe",
+                "https://www.rarlab.com/rar/winrar-x64-611br.exe",
+                "https://www.win-rar.com/fileadmin/winrar-versions/winrar-x64-700br.exe"  # Versão mais recente
+            ]
+        else:
+            winrar_urls = [
+                "https://www.win-rar.com/fileadmin/winrar-versions/wrar611br.exe",
+                "https://www.rarlab.com/rar/wrar611br.exe"
+            ]
+        
+        log_message(f"[WINRAR] Arquitetura detectada: {'64-bit' if is_64bit else '32-bit'}")
+        
+        # Diretório temporário para o instalador
+        temp_dir = tempfile.gettempdir()
+        installer_path = os.path.join(temp_dir, "winrar_installer.exe")
+        
+        # Emitir status se tiver signals
+        if signals and hasattr(signals, 'status'):
+            signals.status.emit("Baixando WinRAR PT-BR...")
+        
+        # Baixar instalador tentando múltiplas URLs
+        download_success = False
+        last_error = None
+        
+        for url_index, winrar_url in enumerate(winrar_urls):
+            log_message(f"[WINRAR] Tentando URL {url_index + 1}/{len(winrar_urls)}: {winrar_url}")
+            
+            max_retries = 2  # Menos tentativas por URL já que temos múltiplas URLs
+            for attempt in range(max_retries):
+                try:
+                    # Headers para simular navegador e evitar bloqueios
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                        'Accept': '*/*',
+                        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
+                        'Referer': 'https://www.win-rar.com/'
+                    }
+                    
+                    response = requests.get(winrar_url, stream=True, timeout=60, headers=headers, allow_redirects=True)
+                    response.raise_for_status()
+                    
+                    # Verificar se o conteúdo é realmente um executável
+                    content_type = response.headers.get('content-type', '').lower()
+                    if 'html' in content_type or 'text' in content_type:
+                        log_message(f"[WINRAR] AVISO: URL retornou HTML ao invés de executável. Tentando próxima URL...")
+                        break  # Tentar próxima URL
+                    
+                    # Verificar magic bytes do arquivo (MZ = executável Windows)
+                    first_chunk = b''
+                    total_size = int(response.headers.get('content-length', 0))
+                    downloaded = 0
+                    
+                    with open(installer_path, 'wb') as f:
+                        for chunk in response.iter_content(chunk_size=8192):
+                            if chunk:
+                                if not first_chunk:
+                                    first_chunk = chunk[:2]
+                                    # Verificar se começa com MZ (executável Windows)
+                                    if first_chunk != b'MZ':
+                                        log_message(f"[WINRAR] AVISO: Arquivo não parece ser um executável válido. Magic bytes: {first_chunk.hex()}")
+                                        # Continuar mesmo assim, pode ser válido
+                                
+                                f.write(chunk)
+                                downloaded += len(chunk)
+                                
+                                # Emitir progresso se tiver signals
+                                if signals and hasattr(signals, 'progress') and total_size > 0:
+                                    progress = int((downloaded / total_size) * 100)
+                                    signals.progress.emit(progress)
+                    
+                    # Verificar se o arquivo foi baixado completamente
+                    file_size = os.path.getsize(installer_path)
+                    
+                    # Verificar tamanho mínimo (WinRAR geralmente tem pelo menos 2MB)
+                    if file_size < 2 * 1024 * 1024:
+                        log_message(f"[WINRAR] AVISO: Arquivo muito pequeno ({file_size} bytes). Tentando próxima URL...")
+                        if os.path.exists(installer_path):
+                            os.remove(installer_path)
+                        break  # Tentar próxima URL
+                    
+                    # Verificar se o tamanho corresponde (com tolerância de 1%)
+                    if total_size > 0:
+                        size_diff = abs(file_size - total_size)
+                        size_tolerance = total_size * 0.01  # 1% de tolerância
+                        if size_diff > size_tolerance:
+                            log_message(f"[WINRAR] AVISO: Tamanho não corresponde exatamente. Esperado: {total_size}, Obtido: {file_size}, Diferença: {size_diff}")
+                            # Continuar mesmo assim se o arquivo for grande o suficiente
+                    
+                    # Verificar magic bytes do arquivo salvo
+                    try:
+                        with open(installer_path, 'rb') as f:
+                            magic = f.read(2)
+                            if magic == b'MZ':
+                                download_success = True
+                                log_message(f"[WINRAR] Download concluído com sucesso: {installer_path} ({file_size} bytes)")
+                                break
+                            else:
+                                log_message(f"[WINRAR] AVISO: Arquivo não é executável válido. Magic bytes: {magic.hex()}")
+                                if os.path.exists(installer_path):
+                                    os.remove(installer_path)
+                                if attempt < max_retries - 1:
+                                    continue
+                                break  # Tentar próxima URL
+                    except Exception as e:
+                        log_message(f"[WINRAR] Erro ao verificar arquivo: {e}")
+                        if attempt < max_retries - 1:
+                            continue
+                        break
+                    
+                except Exception as e:
+                    last_error = str(e)
+                    log_message(f"[WINRAR] Erro no download da URL {url_index + 1} (tentativa {attempt + 1}/{max_retries}): {e}")
+                    if os.path.exists(installer_path):
+                        try:
+                            os.remove(installer_path)
+                        except:
+                            pass
+                    if attempt < max_retries - 1:
+                        time.sleep(2)  # Aguardar antes de tentar novamente
+            
+            if download_success:
+                break
+        
+        if not download_success:
+            raise Exception(f"Falha ao baixar o instalador do WinRAR de todas as URLs. Último erro: {last_error or 'Desconhecido'}")
+        
+        # Emitir status se tiver signals
+        if signals and hasattr(signals, 'status'):
+            signals.status.emit("Instalando WinRAR silenciosamente...")
+        
+        # Verificar se o arquivo existe e é válido antes de instalar
+        if not os.path.exists(installer_path):
+            raise Exception(f"Instalador não encontrado: {installer_path}")
+        
+        file_size = os.path.getsize(installer_path)
+        if file_size < 2 * 1024 * 1024:
+            raise Exception(f"Instalador corrompido ou incompleto: {file_size} bytes")
+        
+        log_message(f"[WINRAR] Instalador válido: {file_size} bytes")
+        
+        # Verificar permissões do arquivo
+        try:
+            # Tentar abrir o arquivo para verificar se não está bloqueado
+            with open(installer_path, 'rb') as f:
+                f.read(1)  # Ler apenas 1 byte para verificar
+            log_message("[WINRAR] Arquivo acessível e legível")
+        except PermissionError:
+            log_message("[WINRAR] AVISO: Problema de permissão ao acessar arquivo")
+            # Tentar remover atributo somente leitura se existir
+            try:
+                os.chmod(installer_path, stat.S_IWRITE | stat.S_IREAD)
+                log_message("[WINRAR] Atributos de arquivo ajustados")
+            except Exception as e:
+                log_message(f"[WINRAR] Não foi possível ajustar atributos: {e}")
+        except Exception as e:
+            log_message(f"[WINRAR] AVISO ao verificar arquivo: {e}")
+        
+        # Instalar silenciosamente
+        # Parâmetros: /S = Silent (instalação silenciosa)
+        log_message("[WINRAR] Iniciando instalação silenciosa...")
+        
+        is_frozen = getattr(sys, 'frozen', False)
+        creation_flags = 0
+        if is_frozen and sys.platform == 'win32':
+            creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+        
+        # Tentar instalar com diferentes métodos
+        install_success = False
+        install_error = None
+        
+        # Método 1: Instalação direta
+        try:
+            log_message("[WINRAR] Tentando instalação direta...")
+            proc = subprocess.Popen(
+                [installer_path, '/S'],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                stdin=subprocess.DEVNULL,
+                creationflags=creation_flags if creation_flags else 0,
+                shell=False
+            )
+            
+            # Aguardar instalação (timeout de 3 minutos)
+            return_code = proc.wait(timeout=180)
+            
+            if return_code == 0:
+                install_success = True
+                log_message("[WINRAR] Instalação concluída com sucesso (método direto)")
+            else:
+                log_message(f"[WINRAR] Instalação retornou código: {return_code}")
+                
+        except subprocess.TimeoutExpired:
+            install_error = "Timeout na instalação"
+            log_message(f"[WINRAR] {install_error}")
+            try:
+                proc.kill()
+            except:
+                pass
+        except Exception as e:
+            install_error = str(e)
+            log_message(f"[WINRAR] Erro na instalação direta: {e}")
+        
+        # Método 2: Tentar com shell=True se o método 1 falhou
+        if not install_success:
+            try:
+                log_message("[WINRAR] Tentando instalação com shell=True...")
+                proc = subprocess.Popen(
+                    f'"{installer_path}" /S',
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    stdin=subprocess.DEVNULL,
+                    creationflags=creation_flags if creation_flags else 0,
+                    shell=True
+                )
+                
+                return_code = proc.wait(timeout=180)
+                
+                if return_code == 0:
+                    install_success = True
+                    log_message("[WINRAR] Instalação concluída com sucesso (método shell)")
+                else:
+                    log_message(f"[WINRAR] Instalação com shell retornou código: {return_code}")
+                    
+            except subprocess.TimeoutExpired:
+                install_error = "Timeout na instalação (método shell)"
+                log_message(f"[WINRAR] {install_error}")
+                try:
+                    proc.kill()
+                except:
+                    pass
+            except Exception as e:
+                install_error = str(e)
+                log_message(f"[WINRAR] Erro na instalação com shell: {e}")
+        
+        # Método 3: Tentar executar diretamente sem flags especiais se os anteriores falharam
+        if not install_success:
+            try:
+                log_message("[WINRAR] Tentando instalação sem flags especiais...")
+                proc = subprocess.Popen(
+                    [installer_path, '/S'],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    stdin=subprocess.DEVNULL
+                )
+                
+                return_code = proc.wait(timeout=180)
+                
+                if return_code == 0:
+                    install_success = True
+                    log_message("[WINRAR] Instalação concluída com sucesso (método simples)")
+                else:
+                    stdout, stderr = proc.communicate()
+                    log_message(f"[WINRAR] Instalação retornou código: {return_code}")
+                    if stderr:
+                        log_message(f"[WINRAR] stderr: {stderr.decode('utf-8', errors='ignore')}")
+                    
+            except subprocess.TimeoutExpired:
+                install_error = "Timeout na instalação (método simples)"
+                log_message(f"[WINRAR] {install_error}")
+                try:
+                    proc.kill()
+                except:
+                    pass
+            except Exception as e:
+                install_error = str(e)
+                log_message(f"[WINRAR] Erro na instalação simples: {e}")
+        
+        if not install_success:
+            raise Exception(f"Falha na instalação do WinRAR: {install_error or 'Erro desconhecido'}")
+        
+        log_message("[WINRAR] Instalação concluída")
+        
+        # Limpar instalador temporário
+        try:
+            if os.path.exists(installer_path):
+                os.remove(installer_path)
+                log_message("[WINRAR] Instalador temporário removido")
+        except Exception as e:
+            log_message(f"[WINRAR] Erro ao remover instalador: {e}")
+        
+        # Aguardar um pouco para garantir que o WinRAR foi instalado
+        import time
+        time.sleep(2)
+        
+        # Verificar se foi instalado com sucesso
+        winrar_path = find_winrar()
+        if winrar_path:
+            log_message(f"[WINRAR] WinRAR instalado com sucesso: {winrar_path}")
+            if signals and hasattr(signals, 'status'):
+                signals.status.emit("WinRAR instalado com sucesso!")
+            return winrar_path
+        else:
+            log_message("[WINRAR] AVISO: WinRAR não encontrado após instalação")
+            return None
+            
+    except subprocess.TimeoutExpired:
+        log_message("[WINRAR] ERRO: Timeout na instalação")
+        if signals and hasattr(signals, 'error'):
+            signals.error.emit("Timeout ao instalar WinRAR")
+        return None
+    except Exception as e:
+        log_message(f"[WINRAR] ERRO ao instalar WinRAR: {e}", include_traceback=True)
+        if signals and hasattr(signals, 'error'):
+            signals.error.emit(f"Erro ao instalar WinRAR: {str(e)}")
+        return None
+
+def ensure_winrar_installed(signals=None):
+    """
+    Garante que o WinRAR está instalado. Se não estiver, baixa e instala automaticamente.
+    
+    Args:
+        signals: Objeto com signals para emitir progresso (opcional)
+    
+    Returns:
+        str: Caminho do WinRAR ou None se não conseguir instalar
+    """
+    # Verificar se já está instalado
+    winrar_path = find_winrar()
+    if winrar_path:
+        log_message(f"[WINRAR] WinRAR já instalado: {winrar_path}")
+        return winrar_path
+    
+    # Se não estiver, instalar
+    log_message("[WINRAR] WinRAR não encontrado. Iniciando instalação automática...")
+    return download_and_install_winrar(signals)
 
 # ================================
 # WORKERS E THREADS
@@ -249,19 +613,17 @@ class DownloadWorker(QRunnable):
                         log_message("[DOWNLOAD WORKER] Extração RAR concluída (rarfile)")
                     except ImportError:
                         # Fallback: usar WinRAR de forma mais segura
-                        winrar_paths = [
-                            r"C:\Program Files\WinRAR\WinRAR.exe",
-                            r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
-                        ]
+                        # Tentar encontrar WinRAR instalado
+                        winrar_path = find_winrar()
                         
-                        winrar_path = None
-                        for path in winrar_paths:
-                            if os.path.exists(path):
-                                winrar_path = path
-                                break
+                        # Se não encontrar, tentar instalar automaticamente
+                        if not winrar_path:
+                            log_message("[DOWNLOAD WORKER] WinRAR não encontrado. Tentando instalar automaticamente...")
+                            self.signals.status.emit("Instalando WinRAR...")
+                            winrar_path = ensure_winrar_installed(self.signals)
                         
                         if not winrar_path:
-                            raise Exception("WinRAR não encontrado e rarfile não instalado")
+                            raise Exception("WinRAR não encontrado e não foi possível instalar automaticamente")
                         
                         # Usar Popen com flags adequadas para .exe
                         is_frozen = getattr(sys, 'frozen', False)
@@ -1190,7 +1552,7 @@ class GameDetailsScreen(QWidget):
                 background: rgba(71, 214, 78, 0.8);
             }
         """)
-        back_btn.clicked.connect(self.go_back)
+        back_btn.clicked.connect(lambda: self.parent_app.pages.setCurrentIndex(1))
         
         layout.addWidget(header)
         
@@ -1371,14 +1733,226 @@ class GameDetailsScreen(QWidget):
         
         layout.addWidget(footer, 0)
     
-    def go_back(self):
-        """Volta para a tela anterior (tela de jogos)"""
-        try:
-            log_message("[GAME_DETAILS] Voltando para tela de jogos...")
-            if self.parent_app:
-                self.parent_app.pages.setCurrentIndex(1)  # tela_jogos
-        except Exception as e:
-            log_message(f"[GAME_DETAILS] Erro ao voltar: {e}")
+
+class ManualInstallScreen(QWidget):
+    """Tela de instalação manual de jogo (convertida de modal para tela real)"""
+    
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.parent_app = parent
+        self.selected_file_path = None
+        
+        # Layout principal
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        
+        # Container principal com fundo
+        self.main_container = QFrame(self)
+        self.main_container.setStyleSheet("""
+            QFrame {
+                background: #1a1a1a;
+            }
+        """)
+        
+        container_layout = QVBoxLayout(self.main_container)
+        container_layout.setContentsMargins(50, 50, 50, 50)
+        container_layout.setSpacing(30)
+        
+        # Header com botão voltar
+        header = QFrame()
+        header.setFixedHeight(60)
+        header.setStyleSheet("""
+            QFrame {
+                background: transparent;
+            }
+        """)
+        
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Botão voltar
+        back_btn = QPushButton("← Voltar")
+        back_btn.setFixedSize(100, 40)
+        back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                border: none;
+                border-radius: 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: rgba(71, 214, 78, 0.8);
+            }
+        """)
+        back_btn.clicked.connect(lambda: self.parent_app.pages.setCurrentIndex(1))
+        
+        header_layout.addWidget(back_btn)
+        header_layout.addStretch()
+        
+        container_layout.addWidget(header)
+        
+        # Título
+        title = QLabel("📥 Instalação Manual de Jogo")
+        title.setFont(QFont("Arial", 24, QFont.Bold))
+        title.setStyleSheet("color: white;")
+        title.setAlignment(Qt.AlignCenter)
+        container_layout.addWidget(title)
+        
+        # Instruções
+        instructions = QLabel(
+            "Selecione um arquivo .ZIP ou .RAR no formato:\n"
+            "Nome do Jogo (ID).zip\n\n"
+            "Exemplo: GTA V (271590).rar"
+        )
+        instructions.setFont(QFont("Arial", 13))
+        instructions.setStyleSheet("color: rgba(255, 255, 255, 0.7); padding: 20px;")
+        instructions.setAlignment(Qt.AlignCenter)
+        instructions.setWordWrap(True)
+        container_layout.addWidget(instructions)
+        
+        # Frame de seleção de arquivo
+        file_frame = QFrame()
+        file_frame.setFixedHeight(120)
+        file_frame.setStyleSheet("""
+            QFrame {
+                background: #232323;
+                border-radius: 12px;
+                border: 2px solid #333;
+            }
+        """)
+        
+        file_layout = QVBoxLayout(file_frame)
+        file_layout.setAlignment(Qt.AlignCenter)
+        
+        self.file_label = QLabel("📁 Nenhum arquivo selecionado")
+        self.file_label.setFont(QFont("Arial", 12))
+        self.file_label.setStyleSheet("color: rgba(255, 255, 255, 0.5);")
+        self.file_label.setAlignment(Qt.AlignCenter)
+        self.file_label.setWordWrap(True)
+        
+        file_layout.addWidget(self.file_label)
+        
+        container_layout.addWidget(file_frame)
+        
+        # Botão de seleção
+        btn_select = QPushButton("🔍 Selecionar Arquivo")
+        btn_select.setFixedHeight(50)
+        btn_select.setCursor(Qt.PointingHandCursor)
+        btn_select.setStyleSheet("""
+            QPushButton {
+                background: #2a2a2a;
+                color: white;
+                border: 2px solid #47D64E;
+                border-radius: 25px;
+                font-size: 15px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: #333333;
+                border-color: #5ce36c;
+            }
+        """)
+        btn_select.clicked.connect(self.select_file)
+        container_layout.addWidget(btn_select)
+        
+        container_layout.addStretch()
+        
+        # Botões de ação
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setSpacing(15)
+        
+        btn_cancel = QPushButton("Cancelar")
+        btn_cancel.setFixedSize(150, 50)
+        btn_cancel.setCursor(Qt.PointingHandCursor)
+        btn_cancel.setStyleSheet("""
+            QPushButton {
+                background: #2a2a2a;
+                color: white;
+                border: 1px solid #444;
+                border-radius: 25px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: #333;
+            }
+        """)
+        btn_cancel.clicked.connect(lambda: self.parent_app.pages.setCurrentIndex(1))
+        
+        btn_install = QPushButton("🚀 Instalar")
+        btn_install.setFixedSize(150, 50)
+        btn_install.setCursor(Qt.PointingHandCursor)
+        btn_install.setStyleSheet("""
+            QPushButton {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #47D64E,
+                    stop:1 #5ce36c
+                );
+                color: #1F1F1F;
+                border: none;
+                border-radius: 25px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #5ce36c,
+                    stop:1 #6ff57d
+                );
+            }
+            QPushButton:disabled {
+                background: #333;
+                color: #666;
+            }
+        """)
+        btn_install.clicked.connect(self.start_install)
+        
+        buttons_layout.addStretch()
+        buttons_layout.addWidget(btn_cancel)
+        buttons_layout.addWidget(btn_install)
+        
+        container_layout.addLayout(buttons_layout)
+        
+        layout.addWidget(self.main_container)
+    
+    def select_file(self):
+        """Abre dialog para selecionar arquivo"""
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Selecionar Arquivo de Jogo",
+            os.path.expanduser("~"),
+            "Arquivos de Jogo (*.zip *.rar);;Todos os Arquivos (*.*)"
+        )
+        
+        if file_path:
+            self.selected_file_path = file_path
+            filename = os.path.basename(file_path)
+            self.file_label.setText(f"✅ {filename}")
+            self.file_label.setStyleSheet("color: #47D64E;")
+            
+            # Validar formato
+            match = re.match(r"^(.+?)\s*\((\d+)\)\.(zip|rar)$", filename, re.IGNORECASE)
+            if not match:
+                self.file_label.setText(f"⚠️ {filename}\n(Formato inválido)")
+                self.file_label.setStyleSheet("color: #ff9500;")
+    
+    def start_install(self):
+        """Inicia instalação manual"""
+        if not self.selected_file_path:
+            QMessageBox.warning(self, "Aviso", "Selecione um arquivo primeiro!")
+            return
+        
+        # Voltar para tela de jogos
+        self.parent_app.pages.setCurrentIndex(1)
+        
+        # Iniciar instalação
+        self.parent_app.install_manual_game(self.selected_file_path)
+
 
 class InstalledGameModal(QWidget):
     """Modal para gerenciar jogo instalado"""
@@ -1749,19 +2323,17 @@ class ManualInstallWorker(QRunnable):
                 log_message("Extração ZIP concluída")
             
             elif self.filepath.lower().endswith('.rar'):
-                winrar_paths = [
-                    r"C:\Program Files\WinRAR\WinRAR.exe",
-                    r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
-                ]
+                # Tentar encontrar WinRAR instalado
+                winrar_path = find_winrar()
                 
-                winrar_path = None
-                for path in winrar_paths:
-                    if os.path.exists(path):
-                        winrar_path = path
-                        break
+                # Se não encontrar, tentar instalar automaticamente
+                if not winrar_path:
+                    log_message("[MANUAL INSTALL] WinRAR não encontrado. Tentando instalar automaticamente...")
+                    self.signals.status.emit("Instalando WinRAR...")
+                    winrar_path = ensure_winrar_installed(self.signals)
                 
                 if not winrar_path:
-                    raise Exception("WinRAR não encontrado. Instale o WinRAR para extrair arquivos .rar")
+                    raise Exception("WinRAR não encontrado e não foi possível instalar automaticamente")
                 
                 # Usar flags adequadas para .exe não fechar o processo pai
                 is_frozen = getattr(sys, 'frozen', False)
@@ -2092,6 +2664,7 @@ class GameApp(QWidget):
         self.tela_dlcs = QWidget()
         self.tela_download = None  # Será criada quando necessário
         self.tela_detalhes = None  # Será criada quando necessário
+        self.tela_manual_install = None  # Será criada quando necessário
         
         self.pages.addWidget(self.tela_home)
         self.pages.addWidget(self.tela_jogos)
@@ -3398,175 +3971,26 @@ class GameApp(QWidget):
             traceback.print_exc()
 
     def open_manual_install_dialog(self):
-        """Abre dialog para seleção e instalação manual de arquivo"""
-        dialog = QDialog(self)
-        dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-        dialog.setFixedSize(550, 400)
-        dialog.setStyleSheet("""
-            QDialog {
-                background: #1a1a1a;
-                border-radius: 16px;
-            }
-        """)
-        
-        layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(20)
-        
-        # Título
-        title = QLabel("📥 Instalação Manual de Jogo")
-        title.setFont(QFont("Arial", 18, QFont.Bold))
-        title.setStyleSheet("color: white;")
-        title.setAlignment(Qt.AlignCenter)
-        
-        # Instruções
-        instructions = QLabel(
-            "Selecione um arquivo .ZIP ou .RAR no formato:\n"
-            "Nome do Jogo (ID).zip\n\n"
-            "Exemplo: GTA V (271590).rar"
-        )
-        instructions.setFont(QFont("Arial", 11))
-        instructions.setStyleSheet("color: rgba(255, 255, 255, 0.7); padding: 10px;")
-        instructions.setAlignment(Qt.AlignCenter)
-        instructions.setWordWrap(True)
-        
-        # Frame de seleção de arquivo
-        file_frame = QFrame()
-        file_frame.setFixedHeight(100)
-        file_frame.setStyleSheet("""
-            QFrame {
-                background: #232323;
-                border-radius: 12px;
-            }
-        """)
-        
-        file_layout = QVBoxLayout(file_frame)
-        file_layout.setAlignment(Qt.AlignCenter)
-        
-        file_label = QLabel("📁 Nenhum arquivo selecionado")
-        file_label.setFont(QFont("Arial", 11))
-        file_label.setStyleSheet("color: rgba(255, 255, 255, 0.5);")
-        file_label.setAlignment(Qt.AlignCenter)
-        file_label.setWordWrap(True)
-        
-        file_layout.addWidget(file_label)
-        
-        # Botão de seleção
-        btn_select = QPushButton("🔍 Selecionar Arquivo")
-        btn_select.setFixedHeight(45)
-        btn_select.setCursor(Qt.PointingHandCursor)
-        btn_select.setStyleSheet("""
-            QPushButton {
-                background: #2a2a2a;
-                color: white;
-                border: 2px solid #47D64E;
-                border-radius: 22px;
-                font-size: 14px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: #333333;
-                border-color: #5ce36c;
-            }
-        """)
-        
-        selected_file_path = [None]  # Usar lista para mutabilidade
-        
-        def select_file():
-            file_path, _ = QFileDialog.getOpenFileName(
-                dialog,
-                "Selecionar Arquivo de Jogo",
-                os.path.expanduser("~"),
-                "Arquivos de Jogo (*.zip *.rar);;Todos os Arquivos (*.*)"
-            )
+        """Abre tela de instalação manual de arquivo"""
+        try:
+            # Remover tela anterior se existir
+            if self.tela_manual_install:
+                try:
+                    self.pages.removeWidget(self.tela_manual_install)
+                    self.tela_manual_install.deleteLater()
+                except:
+                    pass
             
-            if file_path:
-                selected_file_path[0] = file_path
-                filename = os.path.basename(file_path)
-                file_label.setText(f"✅ {filename}")
-                file_label.setStyleSheet("color: #47D64E;")
-                
-                # Validar formato
-                match = re.match(r"^(.+?)\s*\((\d+)\)\.(zip|rar)$", filename, re.IGNORECASE)
-                if not match:
-                    file_label.setText(f"⚠️ {filename}\n(Formato inválido)")
-                    file_label.setStyleSheet("color: #ff9500;")
-        
-        btn_select.clicked.connect(select_file)
-        
-        # Botões de ação
-        buttons_layout = QHBoxLayout()
-        buttons_layout.setSpacing(15)
-        
-        btn_cancel = QPushButton("Cancelar")
-        btn_cancel.setFixedSize(120, 45)
-        btn_cancel.setCursor(Qt.PointingHandCursor)
-        btn_cancel.setStyleSheet("""
-            QPushButton {
-                background: #2a2a2a;
-                color: white;
-                border: 1px solid #444;
-                border-radius: 22px;
-                font-size: 13px;
-            }
-            QPushButton:hover {
-                background: #333;
-            }
-        """)
-        btn_cancel.clicked.connect(dialog.reject)
-        
-        btn_install = QPushButton("🚀 Instalar")
-        btn_install.setFixedSize(120, 45)
-        btn_install.setCursor(Qt.PointingHandCursor)
-        btn_install.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #47D64E,
-                    stop:1 #5ce36c
-                );
-                color: #1F1F1F;
-                border: none;
-                border-radius: 22px;
-                font-size: 13px;
-                font-weight: bold;
-            }
-            QPushButton:hover {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:1, y2:0,
-                    stop:0 #5ce36c,
-                    stop:1 #6ff57d
-                );
-            }
-            QPushButton:disabled {
-                background: #333;
-                color: #666;
-            }
-        """)
-        
-        def start_manual_install():
-            if not selected_file_path[0]:
-                QMessageBox.warning(dialog, "Aviso", "Selecione um arquivo primeiro!")
-                return
+            # Criar nova tela de instalação manual
+            self.tela_manual_install = ManualInstallScreen(self)
             
-            dialog.accept()
-            self.install_manual_game(selected_file_path[0])
-        
-        btn_install.clicked.connect(start_manual_install)
-        
-        buttons_layout.addStretch()
-        buttons_layout.addWidget(btn_cancel)
-        buttons_layout.addWidget(btn_install)
-        
-        # Montagem do layout
-        layout.addWidget(title)
-        layout.addWidget(instructions)
-        layout.addWidget(file_frame)
-        layout.addWidget(btn_select)
-        layout.addStretch()
-        layout.addLayout(buttons_layout)
-        
-        dialog.exec_()
+            # Adicionar ao stack e trocar para ela
+            install_index = self.pages.addWidget(self.tela_manual_install)
+            self.pages.setCurrentIndex(install_index)
+            
+        except Exception as e:
+            log_message(f"[MANUAL_INSTALL] Erro ao abrir tela: {e}", include_traceback=True)
+            QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}")
         
     def load_installed_games(self):
         """Carrega jogos com grid 5 colunas"""
@@ -3769,7 +4193,6 @@ class GameApp(QWidget):
             self.steam_path = steam_path.replace("/", "\\")
         return self.steam_path
     
-
     def get_installed_game_card_widget_by_id(self, game_id):
         for i in range(self.installed_games_layout.count()):
             item = self.installed_games_layout.itemAt(i)
