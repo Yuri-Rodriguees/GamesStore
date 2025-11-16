@@ -1751,7 +1751,7 @@ class ManualInstallScreen(QWidget):
             layout.setSpacing(0)
             
             # Container principal com fundo
-            self.main_container = QFrame()
+            self.main_container = QFrame(self)
             self.main_container.setStyleSheet("""
                 QFrame {
                     background: #1a1a1a;
@@ -1763,7 +1763,7 @@ class ManualInstallScreen(QWidget):
             container_layout.setSpacing(30)
             
             # Header com botão voltar
-            header = QFrame()
+            header = QFrame(self.main_container)
             header.setFixedHeight(60)
             header.setStyleSheet("""
                 QFrame {
@@ -1825,7 +1825,7 @@ class ManualInstallScreen(QWidget):
             container_layout.addWidget(instructions)
             
             # Frame de seleção de arquivo
-            file_frame = QFrame()
+            file_frame = QFrame(self.main_container)
             file_frame.setFixedHeight(120)
             file_frame.setStyleSheet("""
                 QFrame {
@@ -2743,14 +2743,31 @@ class GameApp(QWidget):
         try:
             if self.tela_manual_install is None:
                 # Verificar se self está totalmente inicializado
-                if not hasattr(self, 'pages'):
+                if not hasattr(self, 'pages') or self.pages is None:
                     raise RuntimeError("GameApp não está totalmente inicializado")
                 
-                # Criar tela
-                self.tela_manual_install = ManualInstallScreen(self)
+                print("[DEBUG] Criando ManualInstallScreen...")
+                # Criar tela com tratamento de erro
+                try:
+                    self.tela_manual_install = ManualInstallScreen(self)
+                    print(f"[DEBUG] ManualInstallScreen criado: {self.tela_manual_install}")
+                except Exception as create_err:
+                    print(f"[DEBUG] Erro ao criar ManualInstallScreen: {create_err}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
                 
+                print("[DEBUG] Adicionando ao stack...")
                 # Adicionar ao stack
-                self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
+                try:
+                    self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
+                    print(f"[DEBUG] Tela adicionada no índice: {self.manual_install_index}")
+                except Exception as add_err:
+                    print(f"[DEBUG] Erro ao adicionar ao stack: {add_err}")
+                    import traceback
+                    traceback.print_exc()
+                    raise
+                    
         except Exception as e:
             import traceback
             traceback.print_exc()
@@ -2758,6 +2775,7 @@ class GameApp(QWidget):
             # Não fazer raise para evitar crash - apenas logar o erro
             self.tela_manual_install = None
             self.manual_install_index = None
+            raise  # Re-raise para que o método chamador saiba que falhou
     
     def create_sidebar(self):
         """Cria menu lateral moderno"""
@@ -4054,20 +4072,44 @@ class GameApp(QWidget):
     def open_manual_install_dialog(self):
         """Abre tela de instalação manual de arquivo usando setCurrentIndex"""
         try:
+            # Verificar se pages existe
+            if not hasattr(self, 'pages') or self.pages is None:
+                QMessageBox.warning(self, "Erro", "Sistema de páginas não está disponível.")
+                return
+            
             # Se a tela ainda não foi criada, criar agora
             if self.tela_manual_install is None or self.manual_install_index is None:
-                self._init_manual_install_screen()
+                try:
+                    self._init_manual_install_screen()
+                except Exception as init_err:
+                    import traceback
+                    traceback.print_exc()
+                    log_message(f"[MANUAL_INSTALL] Erro ao inicializar tela: {init_err}", include_traceback=True)
+                    QMessageBox.critical(self, "Erro", f"Erro ao criar tela de instalação manual:\n{str(init_err)}")
+                    return
+            
+            # Verificar se o índice é válido
+            if self.manual_install_index is None:
+                QMessageBox.warning(self, "Erro", "Índice da tela não está definido.")
+                return
+            
+            # Verificar se o índice está dentro do range
+            if self.manual_install_index >= self.pages.count():
+                QMessageBox.warning(self, "Erro", f"Índice inválido: {self.manual_install_index} (total: {self.pages.count()})")
+                return
             
             # Navegar para a tela usando o índice
-            if self.manual_install_index is not None:
-                self.pages.setCurrentIndex(self.manual_install_index)
-            else:
-                QMessageBox.warning(self, "Erro", "Não foi possível abrir a tela de instalação manual.")
+            self.pages.setCurrentIndex(self.manual_install_index)
+            
         except Exception as e:
             import traceback
             traceback.print_exc()
             log_message(f"[MANUAL_INSTALL] Erro ao abrir tela: {e}", include_traceback=True)
-            QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}")
+            try:
+                QMessageBox.critical(self, "Erro", f"Erro ao abrir tela de instalação manual:\n{str(e)}")
+            except:
+                # Se nem o QMessageBox funcionar, pelo menos logamos
+                print(f"[CRITICAL] Erro fatal: {e}")
         
     def load_installed_games(self):
         """Carrega jogos com grid 5 colunas"""
