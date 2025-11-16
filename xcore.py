@@ -543,8 +543,31 @@ class DownloadProgressOverlay(QDialog):
             # Armazenar referência do parent_app antes de fechar
             parent_app = self._parent_app
             
-            # CRÍTICO: Fechar dialog PRIMEIRO com done() para fazer exec_() retornar corretamente
-            # Isso evita que exec_() retorne prematuramente em .exe
+            # CRÍTICO PARA .EXE: Chamar callback ANTES de fechar o dialog
+            # Isso garante que o callback seja executado antes do exec_() retornar
+            log_message("[DOWNLOAD SUCCESS] Chamando callback ANTES de fechar dialog...")
+            
+            # Usar QTimer com Qt.QueuedConnection para garantir execução no thread principal
+            # mas agendar para executar ANTES de fechar o dialog
+            def call_after_success():
+                try:
+                    log_message(f"[DOWNLOAD SUCCESS] Executando after_download_success para game_id={game_id}")
+                    if parent_app and hasattr(parent_app, 'after_download_success'):
+                        parent_app.after_download_success(game_id)
+                        log_message("[DOWNLOAD SUCCESS] after_download_success chamado com sucesso")
+                    else:
+                        log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível")
+                except Exception as e:
+                    log_message(f"[DOWNLOAD SUCCESS] ERRO ao chamar after_download_success: {e}", include_traceback=True)
+            
+            # Agendar callback imediatamente
+            QTimer.singleShot(0, call_after_success)
+            
+            # Processar eventos para garantir que o callback seja executado
+            from PyQt5.QtWidgets import QApplication
+            QApplication.processEvents()
+            
+            # Agora fechar o dialog
             log_message("[DOWNLOAD SUCCESS] Fechando dialog com done()...")
             try:
                 # Chamar done() diretamente SEM usar hide() antes
@@ -563,23 +586,6 @@ class DownloadProgressOverlay(QDialog):
                         self.hide()
                     except:
                         pass
-            
-            # AGORA chamar callback APÓS fechar o dialog
-            # Usar QTimer para garantir execução no thread principal de forma segura
-            def call_after_success():
-                try:
-                    log_message(f"[DOWNLOAD SUCCESS] Executando after_download_success para game_id={game_id}")
-                    if parent_app and hasattr(parent_app, 'after_download_success'):
-                        # Chamar diretamente no thread principal via QTimer
-                        parent_app.after_download_success(game_id)
-                        log_message("[DOWNLOAD SUCCESS] after_download_success chamado com sucesso")
-                    else:
-                        log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível")
-                except Exception as e:
-                    log_message(f"[DOWNLOAD SUCCESS] ERRO ao chamar after_download_success: {e}", include_traceback=True)
-            
-            # Agendar callback com pequeno delay para garantir que o dialog foi fechado
-            QTimer.singleShot(50, call_after_success)
             
         except Exception as e:
             log_message(f"[DOWNLOAD SUCCESS] ERRO crítico ao processar sucesso do download: {e}", include_traceback=True)
@@ -2574,10 +2580,14 @@ class GameApp(QWidget):
                 except:
                     pass
             
-            # Processar eventos pendentes antes de limpar referência
-            # Isso dá tempo para callbacks pendentes serem executados
+            # Processar eventos pendentes múltiplas vezes para garantir que callbacks sejam executados
+            # Isso é crítico no .exe onde callbacks podem não ser executados a tempo
             from PyQt5.QtWidgets import QApplication
-            QApplication.processEvents()
+            
+            # Processar eventos várias vezes para garantir que o callback agendado seja executado
+            # O callback foi agendado com QTimer.singleShot(0, ...) então deve executar rapidamente
+            for _ in range(10):  # Processar eventos até 10 vezes
+                QApplication.processEvents()
             
             # Garantir que o dialog foi fechado corretamente
             try:
