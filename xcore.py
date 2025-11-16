@@ -3647,74 +3647,38 @@ class GameApp(QWidget):
         log_message(f"[AFTER_DOWNLOAD] Iniciando after_download_success para game_id={game_id}")
         
         try:
-            # CRÍTICO PARA .EXE: Usar QTimer para fazer troca de tela de forma assíncrona
-            # Isso evita problemas de UI durante o processamento de eventos
-            log_message("[AFTER_DOWNLOAD] Agendando troca de tela...")
+            # CRÍTICO PARA .EXE: Executar tudo de forma simples e direta
+            # Sem troca de tela, sem animações, sem perguntas - apenas mensagem informativa
+            log_message("[AFTER_DOWNLOAD] Mostrando mensagem de sucesso...")
             
-            def switch_to_installed_games():
+            # Usar QTimer para garantir execução no thread principal de forma segura
+            def show_message():
                 try:
-                    log_message("[AFTER_DOWNLOAD] Trocando para tela de jogos instalados...")
-                    # Troca a tela para jogos instalados
-                    self.pages.setCurrentWidget(self.tela_jogos)
-                    
-                    # Processar eventos para garantir que a troca foi aplicada
-                    from PyQt5.QtWidgets import QApplication
-                    QApplication.processEvents()
-                    
-                    log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
-                    # Carregar jogos após pequeno delay para garantir que a tela foi trocada
-                    QTimer.singleShot(100, lambda: self._load_and_show_message(game_id))
-                    log_message("[AFTER_DOWNLOAD] Troca de tela concluída")
+                    from PyQt5.QtWidgets import QMessageBox
+                    QMessageBox.information(
+                        self,
+                        "✅ Instalação Concluída",
+                        "Jogo instalado com sucesso!\n\nReinicie a Steam para ver o jogo na biblioteca."
+                    )
+                    log_message("[AFTER_DOWNLOAD] Mensagem de sucesso exibida")
                 except Exception as e:
-                    log_message(f"[AFTER_DOWNLOAD] ERRO ao trocar tela: {e}", include_traceback=True)
-                    # Mesmo com erro, mostrar mensagem de sucesso
-                    QTimer.singleShot(500, lambda: self._show_success_message())
+                    log_message(f"[AFTER_DOWNLOAD] ERRO ao mostrar mensagem: {e}", include_traceback=True)
             
-            # Agendar troca de tela com pequeno delay para garantir que o contexto anterior foi limpo
-            QTimer.singleShot(100, switch_to_installed_games)
+            # Agendar mensagem com pequeno delay para garantir que o contexto está seguro
+            QTimer.singleShot(200, show_message)
             log_message("[AFTER_DOWNLOAD] after_download_success concluído com sucesso")
         except Exception as e:
             log_message(f"[AFTER_DOWNLOAD] ERRO em after_download_success: {e}", include_traceback=True)
-            # Mesmo com erro, mostrar mensagem de sucesso
-            QTimer.singleShot(500, lambda: self._show_success_message())
-    
-    def _load_and_show_message(self, game_id):
-        """Carrega jogos instalados e mostra mensagem de sucesso"""
-        try:
-            log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
-            self.load_installed_games()
-            
-            # Processar eventos após carregar para garantir que a UI foi atualizada
-            from PyQt5.QtWidgets import QApplication
-            QApplication.processEvents()
-            
-            log_message("[AFTER_DOWNLOAD] Jogos instalados carregados")
-            
-            # Mostrar mensagem de sucesso simples
-            QTimer.singleShot(200, lambda: self._show_success_message())
-        except Exception as e:
-            log_message(f"[AFTER_DOWNLOAD] ERRO ao carregar jogos: {e}", include_traceback=True)
-            # Mesmo com erro, mostrar mensagem de sucesso
-            QTimer.singleShot(300, lambda: self._show_success_message())
-    
-    def _show_success_message(self):
-        """Mostra mensagem de sucesso e pergunta sobre reiniciar Steam"""
-        try:
-            log_message("[AFTER_DOWNLOAD] Mostrando mensagem de sucesso...")
-            from PyQt5.QtWidgets import QMessageBox
-            QMessageBox.information(
-                self,
-                "✅ Instalação Concluída",
-                "Jogo instalado com sucesso!\n\nReinicie a Steam para ver o jogo na biblioteca."
-            )
-            log_message("[AFTER_DOWNLOAD] Mensagem de sucesso exibida")
-            
-            # Perguntar sobre reiniciar Steam após um pequeno delay
-            QTimer.singleShot(500, self.ask_restart_steam)
-        except Exception as e:
-            log_message(f"[AFTER_DOWNLOAD] ERRO ao mostrar mensagem: {e}", include_traceback=True)
-            # Em caso de erro, apenas perguntar sobre reiniciar Steam
-            QTimer.singleShot(300, self.ask_restart_steam)
+            # Mesmo com erro, tentar mostrar mensagem
+            try:
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    self,
+                    "✅ Instalação Concluída",
+                    "Jogo instalado com sucesso!\n\nReinicie a Steam para ver o jogo na biblioteca."
+                )
+            except:
+                pass
 
     def get_installed_game_card_widget_by_id(self, game_id):
         for i in range(self.installed_games_layout.count()):
