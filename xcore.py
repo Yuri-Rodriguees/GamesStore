@@ -3978,7 +3978,7 @@ class GameApp(QWidget):
             import traceback
             traceback.print_exc()
 
-    def open_manual_install_dialog(self):
+    def open_manual_install_dialog(self, checked=False):
         """Abre tela de instalação manual de arquivo usando setCurrentIndex"""
         try:
             if self.manual_install_index is not None:
