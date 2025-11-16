@@ -2094,6 +2094,32 @@ class InstalledGameModal(QWidget):
         
         header_layout.addWidget(header_image)
         
+        # Botão voltar
+        back_btn = QPushButton("← Voltar", header)
+        back_btn.setFixedSize(100, 40)
+        back_btn.move(20, 10)
+        back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(0, 0, 0, 0.7);
+                color: white;
+                border: none;
+                border-radius: 20px;
+                font-size: 14px;
+                font-weight: bold;
+            }
+            QPushButton:hover {
+                background: rgba(71, 214, 78, 0.8);
+            }
+        """)
+        # Voltar usando setCurrentIndex ao invés de fechar
+        def go_back():
+            if hasattr(self.parent_widget, 'pages'):
+                self.parent_widget.pages.setCurrentIndex(1)
+            else:
+                self.close_modal()
+        back_btn.clicked.connect(go_back)
+        
         # Botão fechar
         close_btn = QPushButton("✕", header)
         close_btn.setFixedSize(40, 40)
