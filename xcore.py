@@ -512,12 +512,13 @@ class DownloadThread(QThread):
             print(f"Erro no download: {str(e)}")
             self.download_complete.emit(False)
 
-class SimpleProgressBar(QWidget):
-    """Barra de progresso simples e otimizada"""
+class CircularProgressBar(QWidget):
+    """Barra de progresso circular moderna, minimalista e otimizada"""
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedSize(250, 20)
+        self.setFixedSize(200, 200)
         self._value = 0
+        self._line_width = 12
         
     def setValue(self, value):
         """Define o valor da barra (0-100)"""
@@ -525,35 +526,59 @@ class SimpleProgressBar(QWidget):
         self.update()
     
     def paintEvent(self, event):
-        """Desenha a barra de progresso"""
+        """Desenha a barra de progresso circular"""
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         
-        # Fundo
-        painter.fillRect(self.rect(), QColor(40, 40, 40))
+        # Centro e raio
+        center = QPointF(self.width() / 2, self.height() / 2)
+        radius = min(self.width(), self.height()) / 2 - self._line_width / 2
         
-        # Barra de progresso
+        # Fundo (círculo de fundo)
+        pen_bg = QPen(QColor(40, 40, 40), self._line_width, Qt.SolidLine, Qt.RoundCap)
+        painter.setPen(pen_bg)
+        painter.drawEllipse(center, radius, radius)
+        
+        # Barra de progresso (arco)
         if self._value > 0:
-            width = int((self._value / 100.0) * self.width())
-            progress_rect = QRect(0, 0, width, self.height())
-            painter.fillRect(progress_rect, QColor(71, 214, 78))  # #47D64E
+            pen_progress = QPen(QColor(71, 214, 78), self._line_width, Qt.SolidLine, Qt.RoundCap)
+            painter.setPen(pen_progress)
+            
+            # Calcular ângulo (0° = topo, sentido horário)
+            span_angle = int((self._value / 100.0) * 360 * 16)  # Qt usa 1/16 de grau
+            
+            # Desenhar arco (startAngle, spanAngle)
+            rect = QRectF(
+                center.x() - radius,
+                center.y() - radius,
+                radius * 2,
+                radius * 2
+            )
+            painter.drawArc(rect, 90 * 16, -span_angle)  # 90*16 = topo, negativo = horário
         
-        # Borda
-        painter.setPen(QColor(60, 60, 60))
-        painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
+        # Texto da porcentagem
+        painter.setPen(QColor(255, 255, 255))
+        font = QFont("Arial", 24, QFont.Bold)
+        painter.setFont(font)
+        
+        text = f"{self._value}%"
+        text_rect = QRectF(0, 0, self.width(), self.height())
+        painter.drawText(text_rect, Qt.AlignCenter, text)
 
-class DownloadProgressOverlay(QDialog):
-    """Dialog simples de progresso de download"""
+class DownloadScreen(QWidget):
+    """Tela profissional de download com barra circular moderna"""
+    download_finished = pyqtSignal(str, str)  # (message, game_id)
+    
     def __init__(self, parent, game_id, game_name, download_url, steam_path):
         super().__init__(parent)
-        self.setModal(True)
-        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint)
-        self.setFixedSize(400, 150)
-        self.setWindowTitle("Download")
+        self.parent_app = parent
+        self.game_id = game_id
+        self.game_name = game_name
+        self._is_closing = False
         
-        # Estilo simples
+        # Estilo da tela
         self.setStyleSheet("""
-            QDialog {
+            QWidget {
                 background-color: #1F1F1F;
             }
             QLabel {
@@ -561,31 +586,57 @@ class DownloadProgressOverlay(QDialog):
             }
         """)
         
-        # Flag para evitar múltiplos fechamentos
-        self._is_closing = False
-
+        # Layout principal
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        # Título
-        title = QLabel(f"Baixando: {game_name}")
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(30)
+        layout.setAlignment(Qt.AlignCenter)
+        
+        # Título do jogo
+        title = QLabel(f"Baixando {game_name}")
         title.setAlignment(Qt.AlignCenter)
-        title.setFont(QFont("Arial", 12, QFont.Bold))
+        title.setFont(QFont("Arial", 20, QFont.Bold))
+        title.setStyleSheet("color: #FFFFFF;")
         layout.addWidget(title)
-
-        # Barra de progresso simples
-        self.progress_bar = SimpleProgressBar(self)
-        layout.addWidget(self.progress_bar)
-
+        
+        # Barra de progresso circular
+        self.progress_bar = CircularProgressBar(self)
+        layout.addWidget(self.progress_bar, alignment=Qt.AlignCenter)
+        
         # Status
         self.status_label = QLabel("Preparando download...")
         self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setFont(QFont("Arial", 14))
+        self.status_label.setStyleSheet("color: #AAAAAA;")
         layout.addWidget(self.status_label)
-
+        
+        # Espaçamento
+        layout.addStretch()
+        
+        # Botão Voltar (só aparece após download concluir)
+        self.back_btn = QPushButton("← Voltar")
+        self.back_btn.setFixedHeight(45)
+        self.back_btn.setCursor(Qt.PointingHandCursor)
+        self.back_btn.setStyleSheet("""
+            QPushButton {
+                background: rgba(255, 255, 255, 0.1);
+                color: white;
+                border: 2px solid rgba(255, 255, 255, 0.3);
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                padding: 0 30px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.2);
+                border-color: #47D64E;
+            }
+        """)
+        self.back_btn.hide()  # Inicialmente oculto
+        self.back_btn.clicked.connect(self.go_back)
+        layout.addWidget(self.back_btn, alignment=Qt.AlignCenter)
+        
         # Inicia worker
-        # CRÍTICO: Manter referência forte ao worker para evitar garbage collection
-        # que pode causar problemas quando o worker termina
         self.worker = DownloadWorker(game_id, download_url, game_name, steam_path)
         self.worker.signals.progress.connect(self.progress_bar.setValue)
         self.worker.signals.status.connect(self.status_label.setText)
@@ -593,10 +644,10 @@ class DownloadProgressOverlay(QDialog):
         self.worker.signals.error.connect(self.on_download_error)
         
         parent.thread_pool.start(self.worker)
-
+    
     def on_download_success(self, message, filepath, game_id):
-        """Callback de sucesso - fecha o DownloadProgressOverlay"""
-        log_message(f"[DOWNLOAD SUCCESS] Download concluído - game_id={game_id}")
+        """Callback de sucesso - atualiza UI e pergunta sobre Steam"""
+        log_message(f"[DOWNLOAD SCREEN] Download concluído - game_id={game_id}")
         
         if self._is_closing:
             return
@@ -604,7 +655,15 @@ class DownloadProgressOverlay(QDialog):
         try:
             self._is_closing = True
             
-            # Desconectar signals antes de fechar para evitar problemas
+            # Atualizar UI
+            self.status_label.setText("✅ Download concluído com sucesso!")
+            self.status_label.setStyleSheet("color: #47D64E; font-weight: bold;")
+            self.progress_bar.setValue(100)
+            
+            # Mostrar botão voltar
+            self.back_btn.show()
+            
+            # Desconectar signals
             try:
                 if hasattr(self, 'worker') and self.worker:
                     self.worker.signals.progress.disconnect()
@@ -614,25 +673,58 @@ class DownloadProgressOverlay(QDialog):
             except:
                 pass
             
-            # Fechar o DownloadProgressOverlay
-            log_message("[DOWNLOAD SUCCESS] Fechando DownloadProgressOverlay...")
-            self.done(QDialog.Accepted)
-            log_message("[DOWNLOAD SUCCESS] DownloadProgressOverlay fechado")
-        except Exception as e:
-            log_message(f"[DOWNLOAD SUCCESS] Erro ao fechar: {e}")
+            # Emitir signal de download finalizado
             try:
-                self.accept()
+                self.download_finished.emit(message, game_id)
             except:
-                try:
-                    self.hide()
-                except:
-                    pass
-
+                pass
+            
+            # Perguntar sobre reiniciar Steam após um pequeno delay
+            QTimer.singleShot(500, lambda: self.ask_restart_steam())
+            
+        except Exception as e:
+            log_message(f"[DOWNLOAD SCREEN] Erro ao processar sucesso: {e}", include_traceback=True)
+    
+    def ask_restart_steam(self):
+        """Pergunta se deseja reiniciar a Steam"""
+        try:
+            log_message("[DOWNLOAD SCREEN] Perguntando sobre reiniciar Steam...")
+            
+            if self.parent_app and hasattr(self.parent_app, 'ask_restart_steam'):
+                self.parent_app.ask_restart_steam()
+            else:
+                # Fallback: perguntar diretamente
+                reply = QMessageBox.question(
+                    self,
+                    "Reiniciar Steam",
+                    "O novo jogo foi instalado!\nDeseja reiniciar a Steam para aparecer na biblioteca?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    if self.parent_app and hasattr(self.parent_app, 'restart_steam'):
+                        QTimer.singleShot(100, self.parent_app.restart_steam)
+        except Exception as e:
+            log_message(f"[DOWNLOAD SCREEN] Erro ao perguntar sobre Steam: {e}")
+    
     def on_download_error(self, error_msg):
         """Callback de erro"""
-        log_message(f"[DOWNLOAD ERROR] {error_msg}")
+        log_message(f"[DOWNLOAD SCREEN] Erro: {error_msg}")
+        self.status_label.setText(f"❌ Erro: {error_msg}")
+        self.status_label.setStyleSheet("color: #FF4444; font-weight: bold;")
+        self.back_btn.show()  # Mostrar botão voltar mesmo em caso de erro
         QMessageBox.critical(self, "Erro no Download", error_msg)
-        self.reject()
+    
+    def go_back(self):
+        """Volta para a tela anterior"""
+        try:
+            log_message("[DOWNLOAD SCREEN] Voltando para tela anterior...")
+            if self.parent_app:
+                # Voltar para tela de jogos
+                self.parent_app.pages.setCurrentIndex(1)  # tela_jogos
+        except Exception as e:
+            log_message(f"[DOWNLOAD SCREEN] Erro ao voltar: {e}")
                
 class SpotlightOverlay(QWidget):
     """Overlay moderno que destaca um widget específico com animação de foco"""
@@ -2038,6 +2130,7 @@ class GameApp(QWidget):
         self.tela_home = QWidget()
         self.tela_jogos = QWidget()
         self.tela_dlcs = QWidget()
+        self.tela_download = None  # Será criada quando necessário
         
         self.pages.addWidget(self.tela_home)
         self.pages.addWidget(self.tela_jogos)
@@ -2597,7 +2690,7 @@ class GameApp(QWidget):
         return dialog
 
     def start_download_from_api(self, game_id, game_name):
-        """Inicia download direto da API generator.ryuu.lol com visual progressivo"""
+        """Inicia download direto da API generator.ryuu.lol com tela de download"""
 
         # Verificar Steam
         steam_path = self.get_steam_directory()
@@ -2610,42 +2703,40 @@ class GameApp(QWidget):
         # URL de download
         download_url = f"https://generator.ryuu.lol/secure_download?appid={game_id}&auth_code=RYUUMANIFESTtsl1c9"
 
-        # Abre overlay de progresso
         try:
             log_message(f"[START_DOWNLOAD] Iniciando download - game_id={game_id}, game_name={game_name}")
-            progress_dialog = DownloadProgressOverlay(self, game_id, game_name, download_url, steam_path)
-            log_message("[START_DOWNLOAD] Dialog criado, executando exec_()...")
             
-            # Usar exec_() de forma segura para .exe
-            # Guardar referência para evitar garbage collection
-            self._current_download_dialog = progress_dialog
+            # Remover tela de download anterior se existir
+            if self.tela_download:
+                try:
+                    self.pages.removeWidget(self.tela_download)
+                    self.tela_download.deleteLater()
+                except:
+                    pass
             
-            try:
-                result = progress_dialog.exec_()
-                log_message(f"[START_DOWNLOAD] exec_() retornou com resultado: {result}")
-            except Exception as exec_error:
-                log_message(f"[START_DOWNLOAD] ERRO durante exec_(): {exec_error}", include_traceback=True)
+            # Criar nova tela de download
+            self.tela_download = DownloadScreen(self, game_id, game_name, download_url, steam_path)
+            self.tela_download.download_finished.connect(self.on_download_finished)
             
-            # NÃO fechar o dialog automaticamente - deixar o usuário fechar quando quiser
-            # O dialog só fecha quando o usuário clicar em fechar ou quando houver erro
-            log_message("[START_DOWNLOAD] Download concluído - dialog permanece aberto")
+            # Adicionar ao stack e trocar para ela
+            download_index = self.pages.addWidget(self.tela_download)
+            self.pages.setCurrentIndex(download_index)
             
-            # Limpar referência de forma segura
-            try:
-                self._current_download_dialog = None
-                log_message("[START_DOWNLOAD] Referência limpa")
-            except Exception as e:
-                log_message(f"[START_DOWNLOAD] Erro ao limpar referência: {e}")
+            log_message("[START_DOWNLOAD] Tela de download criada e exibida")
+            
         except Exception as e:
-            log_message(f"[START_DOWNLOAD] ERRO ao exibir dialog de download: {e}", include_traceback=True)
+            log_message(f"[START_DOWNLOAD] ERRO ao criar tela de download: {e}", include_traceback=True)
             import traceback
             traceback.print_exc()
             try:
-                # Limpar referência mesmo com erro
-                self._current_download_dialog = None
                 QMessageBox.critical(self, "Erro", f"Erro ao iniciar download:\n{str(e)}")
             except Exception as e2:
                 log_message(f"[START_DOWNLOAD] ERRO ao mostrar QMessageBox: {e2}")
+    
+    def on_download_finished(self, message, game_id):
+        """Callback quando download termina"""
+        log_message(f"[START_DOWNLOAD] Download finalizado - tela permanece aberta")
+        # Não voltar automaticamente - deixar usuário escolher quando voltar
 
     def on_download_success(self, message, filepath, game_id):
         """Callback de sucesso do download"""
