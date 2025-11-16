@@ -12,12 +12,16 @@ $tag = "v$Version-beta"
 $backupDir = "backup"
 $requiredFiles = @("uxmod.py", "xcore.py", "datax.py")
 
+Write-Host ""
 Write-Host "========================================" -ForegroundColor Yellow
-Write-Host "  BETA RELEASE v$Version (NÃO PÚBLICA) " -ForegroundColor Yellow
+Write-Host "  BETA RELEASE v$Version (NAO PUBLICA) " -ForegroundColor Yellow
 Write-Host "========================================" -ForegroundColor Yellow
 
-# Validações
-Write-Host "`n[1/5] Validações..." -ForegroundColor Yellow
+# ============================================
+# [1/6] Validacoes
+# ============================================
+Write-Host ""
+Write-Host "[1/6] Validacoes..." -ForegroundColor Cyan
 $missing = @()
 foreach ($file in $requiredFiles) {
     if (-not (Test-Path $file)) {
@@ -26,13 +30,16 @@ foreach ($file in $requiredFiles) {
 }
 
 if ($missing.Count -gt 0) {
-    Write-Host "   ERRO: Arquivos faltando: $($missing -join ', ')" -ForegroundColor Red
+    Write-Host "   X ERRO: Arquivos faltando: $($missing -join ', ')" -ForegroundColor Red
     exit 1
 }
-Write-Host "   OK Módulos encontrados" -ForegroundColor Green
+Write-Host "   OK Modulos encontrados" -ForegroundColor Green
 
-# Backup
-Write-Host "`n[2/5] Backup..." -ForegroundColor Yellow
+# ============================================
+# [2/6] Backup
+# ============================================
+Write-Host ""
+Write-Host "[2/6] Criando backup..." -ForegroundColor Cyan
 if (-not (Test-Path $backupDir)) {
     New-Item -ItemType Directory -Path $backupDir | Out-Null
 }
@@ -41,40 +48,80 @@ $timestamp = Get-Date -Format "dd-MM-yyyy_HH-mm-ss"
 foreach ($file in $requiredFiles) {
     $fileBase = $file.Replace('.py', '')
     $backupFile = "$backupDir/$fileBase-$timestamp.py"
-    Copy-Item $file $backupFile
-    Write-Host "   OK Backup: $backupFile" -ForegroundColor Green
+    Copy-Item $file $backupFile -Force
+    Write-Host "   OK $file -> $backupFile" -ForegroundColor Green
 }
 
-# Atualizar version.py (SEM CANAL)
-Write-Host "`n[3/5] Atualizando version.py..." -ForegroundColor Yellow
-"__version__ = `"$Version`"" | Out-File -FilePath "version.py" -Encoding utf8 -NoNewline
+# ============================================
+# [3/6] Atualizar version.py
+# ============================================
+Write-Host ""
+Write-Host "[3/6] Atualizando version.py..." -ForegroundColor Cyan
+$versionContent = "__version__ = `"$Version`""
+[System.IO.File]::WriteAllText("version.py", $versionContent, [System.Text.Encoding]::UTF8)
 Write-Host "   OK version.py = $Version" -ForegroundColor Green
 
-# Commit
-Write-Host "`n[4/5] Commit..." -ForegroundColor Yellow
+# ============================================
+# [4/6] Git add
+# ============================================
+Write-Host ""
+Write-Host "[4/6] Adicionando arquivos ao Git..." -ForegroundColor Cyan
 git add uxmod.py xcore.py datax.py version.py
 
 if ($CommitAll) {
+    Write-Host "   AVISO: Adicionando TODOS os arquivos (--all)" -ForegroundColor Yellow
     git add .
 }
 
-git commit -m "beta: $tag - $Message"
+Write-Host "   OK Arquivos adicionados" -ForegroundColor Green
+
+# ============================================
+# [5/6] Commit e Push
+# ============================================
+Write-Host ""
+Write-Host "[5/6] Commit e push..." -ForegroundColor Cyan
+$commitMessage = "beta: $tag - $Message"
+git commit -m $commitMessage
+
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "   AVISO: Nada para commitar ou erro no commit" -ForegroundColor Yellow
+}
+
 git push origin develop
-Write-Host "   OK Push concluído" -ForegroundColor Green
+Write-Host "   OK Push para develop concluido" -ForegroundColor Green
 
-# Tag BETA
-Write-Host "`n[5/5] Criando tag BETA $tag..." -ForegroundColor Yellow
+# ============================================
+# [6/6] Criar e enviar tag
+# ============================================
+Write-Host ""
+Write-Host "[6/6] Criando tag BETA..." -ForegroundColor Cyan
+
+# Remover tag local se existir
 git tag -d $tag 2>$null
-git tag $tag
-git push origin $tag
-Write-Host "   OK Tag enviada (será marcada como PRERELEASE)" -ForegroundColor Green
 
-# Aguardar workflow
-Write-Host "`nAguardando workflow (10s)..." -ForegroundColor Yellow
+# Criar nova tag
+git tag -a $tag -m $commitMessage
+Write-Host "   OK Tag $tag criada localmente" -ForegroundColor Green
+
+# Enviar tag
+git push origin $tag --force
+Write-Host "   OK Tag enviada para GitHub" -ForegroundColor Green
+
+# ============================================
+# Aguardar e atualizar
+# ============================================
+Write-Host ""
+Write-Host "Aguardando workflow iniciar (10s)..." -ForegroundColor Yellow
 Start-Sleep -Seconds 10
-git pull origin develop
 
-# Restaurar módulos
+Write-Host "Atualizando repositorio local..." -ForegroundColor Cyan
+git pull origin develop --no-rebase
+
+# ============================================
+# Restaurar modulos do backup
+# ============================================
+Write-Host ""
+Write-Host "Restaurando modulos do backup..." -ForegroundColor Cyan
 foreach ($file in $requiredFiles) {
     if (-not (Test-Path $file)) {
         $fileBase = $file.Replace('.py', '')
@@ -83,20 +130,41 @@ foreach ($file in $requiredFiles) {
                         Select-Object -First 1
         
         if ($latestBackup) {
-            Copy-Item $latestBackup.FullName $file
+            Copy-Item $latestBackup.FullName $file -Force
             Write-Host "   OK $file restaurado" -ForegroundColor Green
+        } else {
+            Write-Host "   AVISO: Backup de $file nao encontrado" -ForegroundColor Yellow
         }
+    } else {
+        Write-Host "   INFO: $file ja existe" -ForegroundColor Gray
     }
 }
 
-Write-Host "`n========================================" -ForegroundColor Green
-Write-Host "  ✅ BETA RELEASE CRIADO!                " -ForegroundColor Green
+# ============================================
+# Resumo final
+# ============================================
+Write-Host ""
+Write-Host "========================================" -ForegroundColor Green
+Write-Host "  OK BETA RELEASE CRIADO COM SUCESSO!   " -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 
-Write-Host "`n⚠️  IMPORTANTE:" -ForegroundColor Yellow
-Write-Host "  - Esta versão NÃO aparecerá para usuários normais" -ForegroundColor White
-Write-Host "  - Apenas quem tiver o link direto pode baixar" -ForegroundColor White
-Write-Host "  - Usuários normais só veem releases STABLE" -ForegroundColor White
+Write-Host ""
+Write-Host "RESUMO:" -ForegroundColor White
+Write-Host "   Tag: $tag" -ForegroundColor Cyan
+Write-Host "   Versao: $Version" -ForegroundColor Cyan
+Write-Host "   Mensagem: $Message" -ForegroundColor Cyan
 
-Write-Host "`nLink da release:" -ForegroundColor Cyan
-Write-Host "  https://github.com/Yuri-Rodriguees/GamesStore/releases/tag/$tag" -ForegroundColor White
+Write-Host ""
+Write-Host "IMPORTANTE:" -ForegroundColor Yellow
+Write-Host "   - Esta versao NAO aparecera para usuarios normais" -ForegroundColor White
+Write-Host "   - Apenas quem tiver o link direto pode baixar" -ForegroundColor White
+Write-Host "   - Usuarios normais so veem releases STABLE" -ForegroundColor White
+Write-Host "   - 2 versoes serao geradas: Debug (console) e Release" -ForegroundColor White
+
+Write-Host ""
+Write-Host "LINKS UTEIS:" -ForegroundColor Cyan
+Write-Host "   Release: https://github.com/Yuri-Rodriguees/GamesStore/releases/tag/$tag" -ForegroundColor White
+Write-Host "   Actions: https://github.com/Yuri-Rodriguees/GamesStore/actions" -ForegroundColor White
+
+Write-Host ""
+Write-Host "Processo concluido!" -ForegroundColor Green
