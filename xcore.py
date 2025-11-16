@@ -31,7 +31,7 @@ from utils import (
     get_safe_download_dir, get_log_directory, log_message,
     get_steam_directory, SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE, remove_readonly
 )
-from ui_components import TitleBar
+from ui_components import TitleBar, CircularProgressBar
 
 # Imports PyQt5 - Core
 from PyQt5.QtCore import (
@@ -512,58 +512,85 @@ class DownloadThread(QThread):
             print(f"Erro no download: {str(e)}")
             self.download_complete.emit(False)
 
-class CircularProgressBar(QWidget):
-    """Barra de progresso circular moderna, minimalista e otimizada"""
-    def __init__(self, parent=None):
+class DownloadProgressOverlay(QDialog):
+    """Dialog de progresso de download com barra circular"""
+    def __init__(self, parent, game_name):
         super().__init__(parent)
-        self.setFixedSize(200, 200)
-        self._value = 0
-        self._line_width = 12
+        self.game_name = game_name
+        self._is_closing = False
         
-    def setValue(self, value):
-        """Define o valor da barra (0-100)"""
-        self._value = max(0, min(100, int(value)))
-        self.update()
+        # Configurar dialog
+        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
+        self.setFixedSize(400, 350)
+        self.setStyleSheet("""
+            QDialog {
+                background: #1a1a1a;
+                border-radius: 12px;
+                border: 2px solid #47D64E;
+            }
+        """)
+        
+        # Layout
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+        
+        # Título
+        title = QLabel(f"Baixando {game_name}")
+        title.setAlignment(Qt.AlignCenter)
+        title.setFont(QFont("Arial", 18, QFont.Bold))
+        title.setStyleSheet("color: white;")
+        layout.addWidget(title)
+        
+        # Barra de progresso circular (da ui_components)
+        self.progress_bar = CircularProgressBar(self)
+        layout.addWidget(self.progress_bar, alignment=Qt.AlignCenter)
+        
+        # Status
+        self.status_label = QLabel("Preparando download...")
+        self.status_label.setAlignment(Qt.AlignCenter)
+        self.status_label.setFont(QFont("Arial", 12))
+        self.status_label.setStyleSheet("color: #AAAAAA;")
+        layout.addWidget(self.status_label)
+        
+        layout.addStretch()
     
-    def paintEvent(self, event):
-        """Desenha a barra de progresso circular"""
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
+    def on_download_success(self, message, filepath, game_id):
+        """Callback de sucesso - fecha o dialog"""
+        if self._is_closing:
+            return
         
-        # Centro e raio
-        center = QPointF(self.width() / 2, self.height() / 2)
-        radius = min(self.width(), self.height()) / 2 - self._line_width / 2
-        
-        # Fundo (círculo de fundo)
-        pen_bg = QPen(QColor(40, 40, 40), self._line_width, Qt.SolidLine, Qt.RoundCap)
-        painter.setPen(pen_bg)
-        painter.drawEllipse(center, radius, radius)
-        
-        # Barra de progresso (arco)
-        if self._value > 0:
-            pen_progress = QPen(QColor(71, 214, 78), self._line_width, Qt.SolidLine, Qt.RoundCap)
-            painter.setPen(pen_progress)
+        try:
+            self._is_closing = True
             
-            # Calcular ângulo (0° = topo, sentido horário)
-            span_angle = int((self._value / 100.0) * 360 * 16)  # Qt usa 1/16 de grau
+            # Atualizar UI
+            self.status_label.setText("✅ Download concluído com sucesso!")
+            self.status_label.setStyleSheet("color: #47D64E; font-weight: bold;")
+            self.progress_bar.set_value(100)
             
-            # Desenhar arco (startAngle, spanAngle)
-            rect = QRectF(
-                center.x() - radius,
-                center.y() - radius,
-                radius * 2,
-                radius * 2
-            )
-            painter.drawArc(rect, 90 * 16, -span_angle)  # 90*16 = topo, negativo = horário
-        
-        # Texto da porcentagem
-        painter.setPen(QColor(255, 255, 255))
-        font = QFont("Arial", 24, QFont.Bold)
-        painter.setFont(font)
-        
-        text = f"{self._value}%"
-        text_rect = QRectF(0, 0, self.width(), self.height())
-        painter.drawText(text_rect, Qt.AlignCenter, text)
+            # Desconectar signals
+            try:
+                if hasattr(self, 'worker') and self.worker:
+                    self.worker.signals.progress.disconnect()
+                    self.worker.signals.status.disconnect()
+                    self.worker.signals.success.disconnect()
+                    self.worker.signals.error.disconnect()
+            except:
+                pass
+            
+            # Fechar dialog após pequeno delay
+            QTimer.singleShot(500, self.accept)
+            
+        except Exception as e:
+            log_message(f"[DOWNLOAD_PROGRESS] Erro em on_download_success: {e}")
+            self.accept()
+    
+    def on_download_error(self, error_msg):
+        """Callback de erro"""
+        log_message(f"[DOWNLOAD_PROGRESS] Erro: {error_msg}")
+        self.status_label.setText(f"❌ Erro: {error_msg}")
+        self.status_label.setStyleSheet("color: #FF4444; font-weight: bold;")
+        QTimer.singleShot(2000, self.reject)
 
 class DownloadScreen(QWidget):
     """Tela profissional de download com barra circular moderna"""
@@ -1055,75 +1082,48 @@ class GameDetailsLoader(QRunnable):
         
         return {'available': False, 'keys_count': 0}
 
-class OverlayModal(QWidget):
-    """Modal overlay que aparece por cima da tela principal"""
-    closed = pyqtSignal()
+class GameDetailsScreen(QWidget):
+    """Tela de detalhes do jogo (convertida de modal para tela real)"""
     
     def __init__(self, parent, game_id, details):
         super().__init__(parent)
         self.game_id = game_id
         self.details = details
-        self.parent_widget = parent
-        
-        # CRÍTICO: Configurar flags para evitar que feche o software
-        # Não usar WindowCloseButtonHint para evitar que o X feche o software
-        self.setWindowFlags(Qt.Widget | Qt.FramelessWindowHint)
-        
-        # Configurar como overlay
-        self.setGeometry(parent.rect())
-        self.setAttribute(Qt.WA_StyledBackground)
+        self.parent_app = parent
         
         # Layout principal
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        
-        self.background = QFrame(self)
-        self.background.setGeometry(self.rect())
-        self.background.setStyleSheet("""
-            QFrame {
-                background: rgba(0, 0, 0, 0.8);
-            }
-        """)
-        self.background.mousePressEvent = lambda e: self.close_modal()
-        
-        self.modal_widget = QFrame(self)
-        self.modal_widget.setFixedSize(900, 700)
-        self.modal_widget.setStyleSheet("""
-            QFrame {
-                background: #1a1a1a;
-                border-radius: 12px;
-                border: none;
-            }
-        """)
-        
-        # Centralizar modal
-        modal_x = (self.width() - 900) // 2
-        modal_y = (self.height() - 700) // 2
-        self.modal_widget.move(modal_x, modal_y)
-        
-        # Setup do conteúdo do modal
-        self.setup_modal_content()
-        
-        # Inicialmente oculto
-        self.hide()
-    
-    def setup_modal_content(self):
-        """Monta o conteúdo do modal"""
-        layout = QVBoxLayout(self.modal_widget)
-        layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
         
+        # Container principal com fundo
+        self.main_container = QFrame(self)
+        self.main_container.setStyleSheet("""
+            QFrame {
+                background: #1a1a1a;
+            }
+        """)
+        
+        container_layout = QVBoxLayout(self.main_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+        
+        # Setup do conteúdo
+        self.setup_screen_content(container_layout)
+        
+        layout.addWidget(self.main_container)
+    
+    def setup_screen_content(self, layout):
+        """Monta o conteúdo da tela"""
         details = self.details
         game_id = self.game_id
         
         # Header
         header = QFrame()
-        header.setFixedHeight(250)
+        header.setFixedHeight(300)
         header.setStyleSheet("""
             QFrame {
                 background: #2a2a2a;
-                border-top-left-radius: 12px;
-                border-top-right-radius: 12px;
             }
         """)
         
@@ -1131,24 +1131,24 @@ class OverlayModal(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
         
         header_image = QLabel()
-        header_image.setFixedSize(900, 250)
+        header_image.setFixedSize(1200, 300)
         header_image.setAlignment(Qt.AlignCenter)
         header_image.setStyleSheet("background: #1a1a1a;")
         
         if details.get('background') or details.get('header_image'):
             bg_url = details.get('background') or details.get('header_image')
-            cache_key = f"modal_header_{self.game_id}"
+            cache_key = f"game_details_header_{self.game_id}"
             loader = ImageLoader(
                 bg_url,
                 cache_key=cache_key,
-                max_size=(950, 300),
-                parent_cache=self.parent_widget.image_cache
+                max_size=(1250, 350),
+                parent_cache=self.parent_app.image_cache
             )
             def on_header_loaded(pixmap):
                 try:
                     if header_image and not pixmap.isNull():
                         scaled = pixmap.scaled(
-                            900, 250,
+                            1200, 300,
                             Qt.KeepAspectRatioByExpanding,
                             Qt.SmoothTransformation
                         )
@@ -1158,12 +1158,12 @@ class OverlayModal(QWidget):
             
             loader.signals.finished.connect(on_header_loaded)
             loader.signals.error.connect(lambda: None)
-            self.parent_widget.thread_pool.start(loader)
+            self.parent_app.thread_pool.start(loader)
         
         header_layout.addWidget(header_image)
         
         overlay = QLabel(header)
-        overlay.setGeometry(0, 0, 900, 250)
+        overlay.setGeometry(0, 0, 1200, 300)
         overlay.setStyleSheet("""
             background: qlineargradient(
                 x1:0, y1:0, x2:0, y2:1,
@@ -1172,24 +1172,25 @@ class OverlayModal(QWidget):
             );
         """)
         
-        # Botão fechar
-        close_btn = QPushButton("✕", header)
-        close_btn.setFixedSize(40, 40)
-        close_btn.move(850, 10)
-        close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.setStyleSheet("""
+        # Botão voltar
+        back_btn = QPushButton("← Voltar", header)
+        back_btn.setFixedSize(100, 40)
+        back_btn.move(20, 10)
+        back_btn.setCursor(Qt.PointingHandCursor)
+        back_btn.setStyleSheet("""
             QPushButton {
                 background: rgba(0, 0, 0, 0.7);
                 color: white;
                 border: none;
                 border-radius: 20px;
-                font-size: 18px;
+                font-size: 14px;
+                font-weight: bold;
             }
             QPushButton:hover {
-                background: rgba(255, 0, 0, 0.8);
+                background: rgba(71, 214, 78, 0.8);
             }
         """)
-        close_btn.clicked.connect(self.close_modal)
+        back_btn.clicked.connect(self.go_back)
         
         layout.addWidget(header)
         
@@ -1326,7 +1327,7 @@ class OverlayModal(QWidget):
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5ce36c, stop:1 #47D64E);
                 }
             """)
-            download_btn.clicked.connect(lambda: self.parent_widget.start_download_from_api(game_id, details.get('nome', 'Jogo')))
+            download_btn.clicked.connect(lambda: self.parent_app.start_download_from_api(game_id, details.get('nome', 'Jogo')))
         else:
             download_btn.setText("❌ Não Disponível")
             download_btn.setEnabled(False)
@@ -1370,55 +1371,14 @@ class OverlayModal(QWidget):
         
         layout.addWidget(footer, 0)
     
-    def show_modal(self):
-        """Mostra o modal com animação"""
-        self.show()
-        self.raise_()
-    
-    def close_modal(self):
-        """Fecha o modal de forma segura - apenas esconde, não destrói"""
+    def go_back(self):
+        """Volta para a tela anterior (tela de jogos)"""
         try:
-            log_message("[OVERLAY_MODAL] Fechando modal...")
-            
-            # CRÍTICO: Apenas esconder o widget, NUNCA chamar close() ou destroy()
-            # Isso evita que o widget pai (software principal) seja fechado
-            if self.isVisible():
-                self.hide()
-                log_message("[OVERLAY_MODAL] Modal ocultado com hide()")
-            
-            # Emitir signal de fechado
-            try:
-                self.closed.emit()
-                log_message("[OVERLAY_MODAL] Signal closed.emit enviado")
-            except:
-                pass
-            
-            log_message("[OVERLAY_MODAL] Modal fechado com sucesso")
+            log_message("[GAME_DETAILS] Voltando para tela de jogos...")
+            if self.parent_app:
+                self.parent_app.pages.setCurrentIndex(1)  # tela_jogos
         except Exception as e:
-            log_message(f"[OVERLAY_MODAL] Erro ao fechar modal: {e}", include_traceback=True)
-    
-    def closeEvent(self, event):
-        """Override para garantir que apenas o modal seja fechado, nunca o software"""
-        try:
-            log_message("[OVERLAY_MODAL] closeEvent interceptado - ignorando evento padrão")
-            # CRÍTICO: Sempre ignorar o evento para não fechar o software
-            event.ignore()
-            
-            # Usar nosso método seguro que apenas esconde
-            self.close_modal()
-        except Exception as e:
-            log_message(f"[OVERLAY_MODAL] Erro no closeEvent: {e}")
-            # SEMPRE ignorar o evento, mesmo em caso de erro
-            event.ignore()
-    
-    def resizeEvent(self, event):
-        """Reposiciona modal ao redimensionar janela"""
-        super().resizeEvent(event)
-        self.background.setGeometry(self.rect())
-        
-        modal_x = (self.width() - 900) // 2
-        modal_y = (self.height() - 700) // 2
-        self.modal_widget.move(modal_x, modal_y)
+            log_message(f"[GAME_DETAILS] Erro ao voltar: {e}")
 
 class InstalledGameModal(QWidget):
     """Modal para gerenciar jogo instalado"""
@@ -2131,6 +2091,7 @@ class GameApp(QWidget):
         self.tela_jogos = QWidget()
         self.tela_dlcs = QWidget()
         self.tela_download = None  # Será criada quando necessário
+        self.tela_detalhes = None  # Será criada quando necessário
         
         self.pages.addWidget(self.tela_home)
         self.pages.addWidget(self.tela_jogos)
@@ -2628,7 +2589,7 @@ class GameApp(QWidget):
         self.thread_pool.start(loader)
 
     def on_game_card_clicked(self, game_id, game_name):
-        """Abre modal overlay ao invés de QDialog"""
+        """Abre tela de detalhes do jogo"""
         loading_dialog = self.create_loading_dialog(game_name)
         loading_dialog.show()
         
@@ -2637,8 +2598,20 @@ class GameApp(QWidget):
         def on_success(details):
             loading_dialog.close()
             
-            overlay = OverlayModal(self, game_id, details)
-            overlay.show_modal()
+            # Remover tela de detalhes anterior se existir
+            if hasattr(self, 'tela_detalhes') and self.tela_detalhes:
+                try:
+                    self.pages.removeWidget(self.tela_detalhes)
+                    self.tela_detalhes.deleteLater()
+                except:
+                    pass
+            
+            # Criar nova tela de detalhes
+            self.tela_detalhes = GameDetailsScreen(self, game_id, details)
+            
+            # Adicionar ao stack e trocar para ela
+            details_index = self.pages.addWidget(self.tela_detalhes)
+            self.pages.setCurrentIndex(details_index)
         
         def on_error(error_msg):
             loading_dialog.close()
@@ -2690,7 +2663,7 @@ class GameApp(QWidget):
         return dialog
 
     def start_download_from_api(self, game_id, game_name):
-        """Inicia download direto da API generator.ryuu.lol com tela de download"""
+        """Inicia download direto da API generator.ryuu.lol com DownloadProgressOverlay"""
 
         # Verificar Steam
         steam_path = self.get_steam_directory()
@@ -2706,26 +2679,42 @@ class GameApp(QWidget):
         try:
             log_message(f"[START_DOWNLOAD] Iniciando download - game_id={game_id}, game_name={game_name}")
             
-            # Remover tela de download anterior se existir
-            if self.tela_download:
-                try:
-                    self.pages.removeWidget(self.tela_download)
-                    self.tela_download.deleteLater()
-                except:
-                    pass
+            # Criar dialog de progresso
+            progress_dialog = DownloadProgressOverlay(self, game_name)
             
-            # Criar nova tela de download
-            self.tela_download = DownloadScreen(self, game_id, game_name, download_url, steam_path)
-            self.tela_download.download_finished.connect(self.on_download_finished)
+            # Criar worker
+            worker = DownloadWorker(game_id, download_url, game_name, steam_path)
+            progress_dialog.worker = worker  # Guardar referência
             
-            # Adicionar ao stack e trocar para ela
-            download_index = self.pages.addWidget(self.tela_download)
-            self.pages.setCurrentIndex(download_index)
+            # Conectar signals
+            worker.signals.progress.connect(progress_dialog.progress_bar.set_value)
+            worker.signals.status.connect(progress_dialog.status_label.setText)
+            worker.signals.speed.connect(progress_dialog.progress_bar.set_speed)
+            worker.signals.downloaded.connect(progress_dialog.progress_bar.set_downloaded)
+            worker.signals.success.connect(progress_dialog.on_download_success)
+            worker.signals.error.connect(progress_dialog.on_download_error)
             
-            log_message("[START_DOWNLOAD] Tela de download criada e exibida")
+            # Iniciar download
+            self.thread_pool.start(worker)
+            
+            # Mostrar dialog (modal)
+            result = progress_dialog.exec_()
+            
+            # Se o download foi concluído com sucesso (result == QDialog.Accepted)
+            if result == QDialog.Accepted:
+                # Após dialog fechar, perguntar sobre reiniciar Steam
+                QTimer.singleShot(500, lambda: self.ask_restart_steam())
+                
+                # Trocar para tela de jogos após um pequeno delay
+                QTimer.singleShot(1000, lambda: self.pages.setCurrentIndex(1))  # tela_jogos
+                
+                # Recarregar lista de jogos instalados
+                QTimer.singleShot(1200, self.load_installed_games)
+            
+            log_message("[START_DOWNLOAD] Download concluído")
             
         except Exception as e:
-            log_message(f"[START_DOWNLOAD] ERRO ao criar tela de download: {e}", include_traceback=True)
+            log_message(f"[START_DOWNLOAD] ERRO ao iniciar download: {e}", include_traceback=True)
             import traceback
             traceback.print_exc()
             try:
@@ -3663,18 +3652,22 @@ class GameApp(QWidget):
         self.load_search_poster_safe(poster, game_id)
         
         # Badge "Instalado" (opcional)
-        badge = QLabel("✅ Instalado", poster)
-        badge.setGeometry(9, 9, 80, 22)
+        badge = QLabel("✔ Instalado", poster)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setFont(QFont("Arial", 9, QFont.Bold))
+        badge.setFont(QFont("Segoe UI", 9, QFont.Bold))
+
         badge.setStyleSheet("""
             QLabel {
-                background: rgba(71, 214, 78, 0.90);
-                color: #141b13;
-                border-radius: 5px;
-                padding: 2px 8px;
+                background-color: rgba(46, 204, 113, 0.95);
+                color: #0f2414;
+                border-radius: 8px;
+                padding: 4px 10px;
+                min-width: 70px;
             }
         """)
+
+        badge.adjustSize()
+        badge.move(8, 8)
         
         # Truncar nome muito longo e permitir quebra em até 2 linhas
         from PyQt5.QtGui import QFontMetrics
