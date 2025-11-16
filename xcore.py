@@ -1,3 +1,4 @@
+
 """
 Games Store - Core Module
 ==========================
@@ -497,6 +498,8 @@ class DownloadProgressOverlay(QDialog):
         self._is_closing = False
         self._game_id = game_id
         self._parent_app = parent
+        self._success_game_id = None
+        self._success_parent_app = None
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(30, 30, 30, 30)
@@ -529,7 +532,7 @@ class DownloadProgressOverlay(QDialog):
         parent.thread_pool.start(self.worker)
 
     def on_download_success(self, message, filepath, game_id):
-        """Callback de sucesso - fecha dialog e chama callback do pai"""
+        """Callback de sucesso - fecha dialog e armazena info para callback posterior"""
         log_message(f"[DOWNLOAD SUCCESS] Iniciando - game_id={game_id}, filepath={filepath}")
         
         if self._is_closing:
@@ -540,38 +543,15 @@ class DownloadProgressOverlay(QDialog):
             self._is_closing = True
             log_message(f"[DOWNLOAD SUCCESS] Flag _is_closing definida. Parent app: {self._parent_app is not None}")
             
-            # Armazenar referência do parent_app antes de fechar
-            parent_app = self._parent_app
+            # CRÍTICO PARA .EXE: Armazenar informações para callback DEPOIS do exec_() retornar
+            # Isso evita problemas de execução de callback durante o exec_()
+            self._success_game_id = game_id
+            self._success_parent_app = self._parent_app
             
-            # CRÍTICO PARA .EXE: Chamar callback ANTES de fechar o dialog
-            # Isso garante que o callback seja executado antes do exec_() retornar
-            log_message("[DOWNLOAD SUCCESS] Chamando callback ANTES de fechar dialog...")
-            
-            # Usar QTimer com Qt.QueuedConnection para garantir execução no thread principal
-            # mas agendar para executar ANTES de fechar o dialog
-            def call_after_success():
-                try:
-                    log_message(f"[DOWNLOAD SUCCESS] Executando after_download_success para game_id={game_id}")
-                    if parent_app and hasattr(parent_app, 'after_download_success'):
-                        parent_app.after_download_success(game_id)
-                        log_message("[DOWNLOAD SUCCESS] after_download_success chamado com sucesso")
-                    else:
-                        log_message("[DOWNLOAD SUCCESS] ERRO: parent_app não disponível")
-                except Exception as e:
-                    log_message(f"[DOWNLOAD SUCCESS] ERRO ao chamar after_download_success: {e}", include_traceback=True)
-            
-            # Agendar callback imediatamente
-            QTimer.singleShot(0, call_after_success)
-            
-            # Processar eventos para garantir que o callback seja executado
-            from PyQt5.QtWidgets import QApplication
-            QApplication.processEvents()
-            
-            # Agora fechar o dialog
+            # Fechar o dialog imediatamente sem executar callbacks
             log_message("[DOWNLOAD SUCCESS] Fechando dialog com done()...")
             try:
-                # Chamar done() diretamente SEM usar hide() antes
-                # hide() faz exec_() retornar antes do done(), causando problemas no .exe
+                # Chamar done() diretamente para fazer exec_() retornar
                 self.done(QDialog.Accepted)
                 log_message("[DOWNLOAD SUCCESS] done(QDialog.Accepted) chamado com sucesso")
             except Exception as e1:
@@ -2580,14 +2560,21 @@ class GameApp(QWidget):
                 except:
                     pass
             
-            # Processar eventos pendentes múltiplas vezes para garantir que callbacks sejam executados
-            # Isso é crítico no .exe onde callbacks podem não ser executados a tempo
-            from PyQt5.QtWidgets import QApplication
-            
-            # Processar eventos várias vezes para garantir que o callback agendado seja executado
-            # O callback foi agendado com QTimer.singleShot(0, ...) então deve executar rapidamente
-            for _ in range(10):  # Processar eventos até 10 vezes
-                QApplication.processEvents()
+            # CRÍTICO: Chamar callback DEPOIS do exec_() retornar
+            # Isso evita problemas no .exe onde callbacks durante exec_() podem causar crash
+            if hasattr(progress_dialog, '_success_game_id') and progress_dialog._success_game_id:
+                try:
+                    game_id = progress_dialog._success_game_id
+                    parent_app = progress_dialog._success_parent_app
+                    log_message(f"[START_DOWNLOAD] Executando callback after_download_success para game_id={game_id}")
+                    
+                    if parent_app and hasattr(parent_app, 'after_download_success'):
+                        parent_app.after_download_success(game_id)
+                        log_message("[START_DOWNLOAD] after_download_success chamado com sucesso")
+                    else:
+                        log_message("[START_DOWNLOAD] ERRO: parent_app não disponível para callback")
+                except Exception as callback_error:
+                    log_message(f"[START_DOWNLOAD] ERRO ao executar callback: {callback_error}", include_traceback=True)
             
             # Garantir que o dialog foi fechado corretamente
             try:
@@ -3660,22 +3647,57 @@ class GameApp(QWidget):
         log_message(f"[AFTER_DOWNLOAD] Iniciando after_download_success para game_id={game_id}")
         
         try:
-            log_message("[AFTER_DOWNLOAD] Trocando para tela de jogos instalados...")
-            # Troca a tela para jogos instalados e recarrega a lista
-            self.pages.setCurrentWidget(self.tela_jogos)
+            # CRÍTICO PARA .EXE: Usar QTimer para fazer troca de tela de forma assíncrona
+            # Isso evita problemas de UI durante o processamento de eventos
+            log_message("[AFTER_DOWNLOAD] Agendando troca de tela...")
+            
+            def switch_to_installed_games():
+                try:
+                    log_message("[AFTER_DOWNLOAD] Trocando para tela de jogos instalados...")
+                    # Troca a tela para jogos instalados
+                    self.pages.setCurrentWidget(self.tela_jogos)
+                    
+                    # Processar eventos para garantir que a troca foi aplicada
+                    from PyQt5.QtWidgets import QApplication
+                    QApplication.processEvents()
+                    
+                    log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
+                    # Carregar jogos após pequeno delay para garantir que a tela foi trocada
+                    QTimer.singleShot(100, lambda: self._load_and_show_spotlight(game_id))
+                    log_message("[AFTER_DOWNLOAD] Troca de tela concluída")
+                except Exception as e:
+                    log_message(f"[AFTER_DOWNLOAD] ERRO ao trocar tela: {e}", include_traceback=True)
+                    # Mesmo com erro, tentar perguntar sobre reiniciar Steam
+                    QTimer.singleShot(1000, self.ask_restart_steam)
+            
+            # Agendar troca de tela com pequeno delay para garantir que o contexto anterior foi limpo
+            QTimer.singleShot(100, switch_to_installed_games)
+            log_message("[AFTER_DOWNLOAD] after_download_success concluído com sucesso")
+        except Exception as e:
+            log_message(f"[AFTER_DOWNLOAD] ERRO em after_download_success: {e}", include_traceback=True)
+            # Mesmo com erro, tentar perguntar sobre reiniciar Steam
+            QTimer.singleShot(1000, self.ask_restart_steam)
+    
+    def _load_and_show_spotlight(self, game_id):
+        """Carrega jogos instalados e mostra spotlight"""
+        try:
             log_message("[AFTER_DOWNLOAD] Carregando jogos instalados...")
             self.load_installed_games()
+            
+            # Processar eventos após carregar para garantir que a UI foi atualizada
+            from PyQt5.QtWidgets import QApplication
+            QApplication.processEvents()
+            
             log_message("[AFTER_DOWNLOAD] Jogos instalados carregados")
             
             # (Opcional) SpotlightOverlay para destacar o card recém-instalado
             # Usar QTimer para garantir que a UI foi atualizada antes de mostrar overlay
             log_message("[AFTER_DOWNLOAD] Agendando spotlight e restart prompt")
             QTimer.singleShot(300, lambda: self.show_spotlight_and_ask_restart(game_id))
-            log_message("[AFTER_DOWNLOAD] after_download_success concluído com sucesso")
         except Exception as e:
-            log_message(f"[AFTER_DOWNLOAD] ERRO em after_download_success: {e}", include_traceback=True)
+            log_message(f"[AFTER_DOWNLOAD] ERRO ao carregar jogos: {e}", include_traceback=True)
             # Mesmo com erro, tentar perguntar sobre reiniciar Steam
-            QTimer.singleShot(1000, self.ask_restart_steam)
+            QTimer.singleShot(500, self.ask_restart_steam)
     
     def show_spotlight_and_ask_restart(self, game_id):
         """Mostra spotlight e pergunta sobre reiniciar Steam"""
