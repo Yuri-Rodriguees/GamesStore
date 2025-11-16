@@ -31,7 +31,7 @@ from utils import (
     get_safe_download_dir, get_log_directory, log_message,
     get_steam_directory, SECRET_KEY, API_URL, API_URL_SITE, AUTH_CODE, remove_readonly
 )
-from ui_components import TitleBar, CircularProgressBar
+from ui_components import TitleBar
 
 # Imports PyQt5 - Core
 from PyQt5.QtCore import (
@@ -485,115 +485,108 @@ class DownloadThread(QThread):
 
 # TitleBar e CircularProgressBar movidos para ui_components.py
 
+class SimpleProgressBar(QWidget):
+    """Barra de progresso simples e otimizada"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(250, 20)
+        self._value = 0
+        
+    def setValue(self, value):
+        """Define o valor da barra (0-100)"""
+        self._value = max(0, min(100, int(value)))
+        self.update()
+    
+    def paintEvent(self, event):
+        """Desenha a barra de progresso"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Fundo
+        painter.fillRect(self.rect(), QColor(40, 40, 40))
+        
+        # Barra de progresso
+        if self._value > 0:
+            width = int((self._value / 100.0) * self.width())
+            progress_rect = QRect(0, 0, width, self.height())
+            painter.fillRect(progress_rect, QColor(71, 214, 78))  # #47D64E
+        
+        # Borda
+        painter.setPen(QColor(60, 60, 60))
+        painter.drawRect(self.rect().adjusted(0, 0, -1, -1))
+
+
 class DownloadProgressOverlay(QDialog):
+    """Dialog simples de progresso de download"""
     def __init__(self, parent, game_id, game_name, download_url, steam_path):
         super().__init__(parent)
         self.setModal(True)
-        self.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-        self.setFixedSize(320, 320)
-        self.setStyleSheet("background: rgba(26,26,26,0.97); border-radius: 20px;")
-        self.setAttribute(Qt.WA_TranslucentBackground)
+        self.setWindowFlags(Qt.Dialog | Qt.WindowTitleHint)
+        self.setFixedSize(400, 150)
+        self.setWindowTitle("Download")
+        
+        # Estilo simples
+        self.setStyleSheet("""
+            QDialog {
+                background-color: #1F1F1F;
+            }
+            QLabel {
+                color: #E0E0E0;
+            }
+        """)
         
         # Flag para evitar múltiplos fechamentos
         self._is_closing = False
-        self._game_id = game_id
-        self._parent_app = parent
-        self._success_game_id = None
-        self._success_parent_app = None
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(30, 30, 30, 30)
-        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(15)
 
-        label = QLabel(f"Baixando\n{game_name}")
-        label.setAlignment(Qt.AlignCenter)
-        label.setFont(QFont("Arial", 14, QFont.Bold))
-        label.setStyleSheet("color: white;")
-        layout.addWidget(label)
+        # Título
+        title = QLabel(f"Baixando: {game_name}")
+        title.setAlignment(Qt.AlignCenter)
+        title.setFont(QFont("Arial", 12, QFont.Bold))
+        layout.addWidget(title)
 
-        self.progress = CircularProgressBar(self)
-        layout.addStretch()
-        layout.addWidget(self.progress, alignment=Qt.AlignCenter)
-        layout.addStretch()
+        # Barra de progresso simples
+        self.progress_bar = SimpleProgressBar(self)
+        layout.addWidget(self.progress_bar)
 
-        self.status_label = QLabel("Preparando download…")
-        self.status_label.setStyleSheet("color: #cfcfcf;")
+        # Status
+        self.status_label = QLabel("Preparando download...")
         self.status_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self.status_label)
 
         # Inicia worker
         self.worker = DownloadWorker(game_id, download_url, game_name, steam_path)
-        self.worker.signals.progress.connect(self.progress.set_value)
-        self.worker.signals.speed.connect(self.progress.set_speed)
-        self.worker.signals.downloaded.connect(self.progress.set_downloaded)
+        self.worker.signals.progress.connect(self.progress_bar.setValue)
         self.worker.signals.status.connect(self.status_label.setText)
         self.worker.signals.success.connect(self.on_download_success)
         self.worker.signals.error.connect(self.on_download_error)
         parent.thread_pool.start(self.worker)
 
     def on_download_success(self, message, filepath, game_id):
-        """Callback de sucesso - fecha dialog e armazena info para callback posterior"""
-        log_message(f"[DOWNLOAD SUCCESS] Iniciando - game_id={game_id}, filepath={filepath}")
+        """Callback de sucesso - fecha dialog simplesmente"""
+        log_message(f"[DOWNLOAD SUCCESS] Download concluído - game_id={game_id}")
         
         if self._is_closing:
-            log_message("[DOWNLOAD SUCCESS] Já está fechando, ignorando")
-            return  # Evitar múltiplos fechamentos
+            return
         
         try:
             self._is_closing = True
-            log_message(f"[DOWNLOAD SUCCESS] Flag _is_closing definida. Parent app: {self._parent_app is not None}")
-            
-            # CRÍTICO PARA .EXE: Armazenar informações para callback DEPOIS do exec_() retornar
-            # Isso evita problemas de execução de callback durante o exec_()
-            self._success_game_id = game_id
-            self._success_parent_app = self._parent_app
-            
-            # Fechar o dialog imediatamente sem executar callbacks
-            log_message("[DOWNLOAD SUCCESS] Fechando dialog com done()...")
-            try:
-                # Chamar done() diretamente para fazer exec_() retornar
-                self.done(QDialog.Accepted)
-                log_message("[DOWNLOAD SUCCESS] done(QDialog.Accepted) chamado com sucesso")
-            except Exception as e1:
-                log_message(f"[DOWNLOAD SUCCESS] Erro ao chamar done(): {e1}")
-                try:
-                    self.accept()
-                    log_message("[DOWNLOAD SUCCESS] accept() chamado como fallback")
-                except Exception as e2:
-                    log_message(f"[DOWNLOAD SUCCESS] Erro ao chamar accept(): {e2}")
-                    # Última tentativa: esconder
-                    try:
-                        self.hide()
-                    except:
-                        pass
-            
+            # Fechar dialog imediatamente
+            self.done(QDialog.Accepted)
         except Exception as e:
-            log_message(f"[DOWNLOAD SUCCESS] ERRO crítico ao processar sucesso do download: {e}", include_traceback=True)
-            # Tentar fechar dialog mesmo com erro
+            log_message(f"[DOWNLOAD SUCCESS] Erro ao fechar: {e}")
             try:
-                if self.isVisible():
-                    try:
-                        self.done(QDialog.Accepted)
-                    except:
-                        try:
-                            self.accept()
-                        except:
-                            self.hide()
+                self.accept()
             except:
-                pass
-    
-    def close_dialog_safely(self):
-        """Fecha o dialog de forma segura - método legado, não usado mais"""
-        # Este método não é mais usado, mas mantido para compatibilidade
-        log_message("[DOWNLOAD SUCCESS] close_dialog_safely chamado (método legado)")
-        try:
-            if self.isVisible():
                 self.hide()
-        except:
-            pass
 
     def on_download_error(self, error_msg):
-        QMessageBox.critical(self, "Falha no download", error_msg)
+        """Callback de erro"""
+        log_message(f"[DOWNLOAD ERROR] {error_msg}")
+        QMessageBox.critical(self, "Erro no Download", error_msg)
         self.reject()
                
 class SpotlightOverlay(QWidget):
@@ -2560,22 +2553,6 @@ class GameApp(QWidget):
                 except:
                     pass
             
-            # CRÍTICO: Chamar callback DEPOIS do exec_() retornar
-            # Isso evita problemas no .exe onde callbacks durante exec_() podem causar crash
-            if hasattr(progress_dialog, '_success_game_id') and progress_dialog._success_game_id:
-                try:
-                    game_id = progress_dialog._success_game_id
-                    parent_app = progress_dialog._success_parent_app
-                    log_message(f"[START_DOWNLOAD] Executando callback after_download_success para game_id={game_id}")
-                    
-                    if parent_app and hasattr(parent_app, 'after_download_success'):
-                        parent_app.after_download_success(game_id)
-                        log_message("[START_DOWNLOAD] after_download_success chamado com sucesso")
-                    else:
-                        log_message("[START_DOWNLOAD] ERRO: parent_app não disponível para callback")
-                except Exception as callback_error:
-                    log_message(f"[START_DOWNLOAD] ERRO ao executar callback: {callback_error}", include_traceback=True)
-            
             # Garantir que o dialog foi fechado corretamente
             try:
                 if progress_dialog.isVisible():
@@ -3642,43 +3619,6 @@ class GameApp(QWidget):
             self.steam_path = steam_path.replace("/", "\\")
         return self.steam_path
     
-    def after_download_success(self, game_id):
-        """Callback chamado após download bem-sucedido"""
-        log_message(f"[AFTER_DOWNLOAD] Iniciando after_download_success para game_id={game_id}")
-        
-        try:
-            # CRÍTICO PARA .EXE: Executar tudo de forma simples e direta
-            # Sem troca de tela, sem animações, sem perguntas - apenas mensagem informativa
-            log_message("[AFTER_DOWNLOAD] Mostrando mensagem de sucesso...")
-            
-            # Usar QTimer para garantir execução no thread principal de forma segura
-            def show_message():
-                try:
-                    from PyQt5.QtWidgets import QMessageBox
-                    QMessageBox.information(
-                        self,
-                        "✅ Instalação Concluída",
-                        "Jogo instalado com sucesso!\n\nReinicie a Steam para ver o jogo na biblioteca."
-                    )
-                    log_message("[AFTER_DOWNLOAD] Mensagem de sucesso exibida")
-                except Exception as e:
-                    log_message(f"[AFTER_DOWNLOAD] ERRO ao mostrar mensagem: {e}", include_traceback=True)
-            
-            # Agendar mensagem com pequeno delay para garantir que o contexto está seguro
-            QTimer.singleShot(200, show_message)
-            log_message("[AFTER_DOWNLOAD] after_download_success concluído com sucesso")
-        except Exception as e:
-            log_message(f"[AFTER_DOWNLOAD] ERRO em after_download_success: {e}", include_traceback=True)
-            # Mesmo com erro, tentar mostrar mensagem
-            try:
-                from PyQt5.QtWidgets import QMessageBox
-                QMessageBox.information(
-                    self,
-                    "✅ Instalação Concluída",
-                    "Jogo instalado com sucesso!\n\nReinicie a Steam para ver o jogo na biblioteca."
-                )
-            except:
-                pass
 
     def get_installed_game_card_widget_by_id(self, game_id):
         for i in range(self.installed_games_layout.count()):
