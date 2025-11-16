@@ -68,7 +68,7 @@ class DownloadWorkerSignals(QObject):
     status = pyqtSignal(str)  # Texto de status
     success = pyqtSignal(str, str, str)  # (message, filepath, game_id)
     error = pyqtSignal(str)
-    finished = pyqtSignal()
+    # Removido finished signal - não é necessário e pode causar problemas
 
 class DownloadWorker(QRunnable):
     """Worker responsável pelo download, extração e instalação"""
@@ -237,35 +237,46 @@ class DownloadWorker(QRunnable):
                     log_message("[DOWNLOAD WORKER] Extração ZIP concluída")
                 
                 elif str(filepath).lower().endswith('.rar'):
-                    winrar_paths = [
-                        r"C:\Program Files\WinRAR\WinRAR.exe",
-                        r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
-                    ]
-                    
-                    winrar_path = None
-                    for path in winrar_paths:
-                        if os.path.exists(path):
-                            winrar_path = path
-                            break
-                    
-                    if not winrar_path:
-                        raise Exception("WinRAR não encontrado")
-                    
-                    # Usar flags adequadas para .exe não fechar o processo pai
-                    is_frozen = getattr(sys, 'frozen', False)
-                    creation_flags = 0
-                    if is_frozen and sys.platform == 'win32':
-                        creation_flags = subprocess.CREATE_NO_WINDOW
-                    
-                    subprocess.run(
-                        [winrar_path, 'x', '-ibck', '-inul', str(filepath), str(temp_dir)],
-                        check=True,
-                        timeout=300,
-                        creationflags=creation_flags,
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL
-                    )
-                    log_message("[DOWNLOAD WORKER] Extração RAR concluída")
+                    # Tentar usar unrar via Python puro primeiro
+                    try:
+                        import rarfile
+                        with rarfile.RarFile(filepath) as rf:
+                            total_files = len(rf.namelist())
+                            for i, member in enumerate(rf.namelist()):
+                                rf.extract(member, temp_dir)
+                                progress = int((i / total_files) * 100)
+                                self.signals.progress.emit(progress)
+                        log_message("[DOWNLOAD WORKER] Extração RAR concluída (rarfile)")
+                    except ImportError:
+                        # Fallback: usar WinRAR de forma mais segura
+                        winrar_paths = [
+                            r"C:\Program Files\WinRAR\WinRAR.exe",
+                            r"C:\Program Files (x86)\WinRAR\WinRAR.exe"
+                        ]
+                        
+                        winrar_path = None
+                        for path in winrar_paths:
+                            if os.path.exists(path):
+                                winrar_path = path
+                                break
+                        
+                        if not winrar_path:
+                            raise Exception("WinRAR não encontrado e rarfile não instalado")
+                        
+                        # Usar Popen com flags adequadas para .exe
+                        is_frozen = getattr(sys, 'frozen', False)
+                        creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS if is_frozen and sys.platform == 'win32' else 0
+                        
+                        # Executar de forma mais segura
+                        proc = subprocess.Popen(
+                            [winrar_path, 'x', '-ibck', '-inul', str(filepath), str(temp_dir)],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            stdin=subprocess.DEVNULL,
+                            creationflags=creation_flags if creation_flags else 0
+                        )
+                        proc.wait(timeout=300)
+                        log_message("[DOWNLOAD WORKER] Extração RAR concluída (WinRAR)")
                 
                 self.signals.progress.emit(100)
                 self.signals.status.emit("Instalando arquivos do jogo...")
@@ -321,31 +332,43 @@ class DownloadWorker(QRunnable):
             
         finally:
             log_message("[DOWNLOAD WORKER] Iniciando limpeza (finally block)")
-            # Limpeza
+            # Limpeza de forma mais segura
             try:
                 if temp_dir and temp_dir.exists():
-                    def remove_readonly(func, path, excinfo):
-                        os.chmod(path, stat.S_IWRITE)
-                        func(path)
-                    
-                    shutil.rmtree(temp_dir, onerror=remove_readonly)
-                    log_message("[DOWNLOAD WORKER] Diretório temporário removido")
+                    # Tentar remover de forma mais segura
+                    try:
+                        # Primeiro, tentar remover normalmente
+                        shutil.rmtree(temp_dir)
+                        log_message("[DOWNLOAD WORKER] Diretório temporário removido")
+                    except PermissionError:
+                        # Se falhar, tentar remover arquivos individualmente
+                        def remove_readonly(func, path, excinfo):
+                            try:
+                                os.chmod(path, stat.S_IWRITE)
+                                func(path)
+                            except:
+                                pass
+                        
+                        try:
+                            shutil.rmtree(temp_dir, onerror=remove_readonly)
+                            log_message("[DOWNLOAD WORKER] Diretório temporário removido (com tratamento de readonly)")
+                        except:
+                            log_message("[DOWNLOAD WORKER] Não foi possível remover diretório temporário (será removido depois)")
                 
                 if filepath and os.path.exists(filepath):
                     try:
+                        # Tentar remover arquivo de forma segura
+                        os.chmod(filepath, stat.S_IWRITE)
                         os.remove(filepath)
                         log_message("[DOWNLOAD WORKER] Arquivo temporário removido")
                     except Exception as e:
                         log_message(f"[DOWNLOAD WORKER] Erro ao remover arquivo: {e}")
             except Exception as e:
-                log_message(f"[DOWNLOAD WORKER] Erro na limpeza: {e}", include_traceback=True)
+                log_message(f"[DOWNLOAD WORKER] Erro na limpeza: {e}")
+                # Não propagar erro de limpeza
             
-            log_message("[DOWNLOAD WORKER] Enviando signal finished.emit")
-            try:
-                self.signals.finished.emit()
-                log_message("[DOWNLOAD WORKER] Signal finished.emit enviado com sucesso")
-            except Exception as e:
-                log_message(f"[DOWNLOAD WORKER] ERRO ao emitir finished: {e}", include_traceback=True)
+            # Não emitir signal finished - pode causar problemas no .exe
+            # O dialog já é fechado pelo signal success
             log_message("[DOWNLOAD WORKER] Worker concluído - FIM DO MÉTODO")
     
     def process_game_files(self, source_dir, steam_path):
@@ -394,30 +417,36 @@ class DownloadWorker(QRunnable):
             'manifests': []
         }
         
-        # Mover arquivos
+        # Mover arquivos de forma segura
         for root, _, files in os.walk(source_dir):
             for file in files:
                 file_path = os.path.join(root, file)
                 
-                if file.lower().endswith('.lua'):
-                    dest_path = os.path.join(stplugin_dir, file)
-                    shutil.copy2(file_path, dest_path)
-                    moved_files['lua'].append(file)
-                    
-                elif file.lower().endswith('.st'):
-                    dest_path = os.path.join(stplugin_dir, file)
-                    shutil.copy2(file_path, dest_path)
-                    moved_files['st'].append(file)
-                    
-                elif file.lower().endswith('.bin'):
-                    dest_path = os.path.join(StatsExport_dir, file)
-                    shutil.copy2(file_path, dest_path)
-                    moved_files['bin'].append(file)
-                    
-                elif file.lower().endswith('.manifest'):
-                    dest_path = os.path.join(depotcache_dir, file)
-                    shutil.copy2(file_path, dest_path)
-                    moved_files['manifests'].append(file)
+                try:
+                    if file.lower().endswith('.lua'):
+                        dest_path = os.path.join(stplugin_dir, file)
+                        # Usar copy ao invés de copy2 para evitar problemas com metadados
+                        shutil.copy(file_path, dest_path)
+                        moved_files['lua'].append(file)
+                        
+                    elif file.lower().endswith('.st'):
+                        dest_path = os.path.join(stplugin_dir, file)
+                        shutil.copy(file_path, dest_path)
+                        moved_files['st'].append(file)
+                        
+                    elif file.lower().endswith('.bin'):
+                        dest_path = os.path.join(StatsExport_dir, file)
+                        shutil.copy(file_path, dest_path)
+                        moved_files['bin'].append(file)
+                        
+                    elif file.lower().endswith('.manifest'):
+                        dest_path = os.path.join(depotcache_dir, file)
+                        shutil.copy(file_path, dest_path)
+                        moved_files['manifests'].append(file)
+                except Exception as e:
+                    log_message(f"[DOWNLOAD WORKER] Erro ao copiar {file}: {e}")
+                    # Continuar com outros arquivos mesmo se um falhar
+                    continue
         
         total_moved = sum(len(files) for files in moved_files.values())
         if total_moved == 0:
@@ -558,15 +587,18 @@ class DownloadProgressOverlay(QDialog):
         layout.addWidget(self.status_label)
 
         # Inicia worker
+        # CRÍTICO: Manter referência forte ao worker para evitar garbage collection
+        # que pode causar problemas quando o worker termina
         self.worker = DownloadWorker(game_id, download_url, game_name, steam_path)
         self.worker.signals.progress.connect(self.progress_bar.setValue)
         self.worker.signals.status.connect(self.status_label.setText)
         self.worker.signals.success.connect(self.on_download_success)
         self.worker.signals.error.connect(self.on_download_error)
+        
         parent.thread_pool.start(self.worker)
 
     def on_download_success(self, message, filepath, game_id):
-        """Callback de sucesso - fecha dialog simplesmente"""
+        """Callback de sucesso - fecha o DownloadProgressOverlay"""
         log_message(f"[DOWNLOAD SUCCESS] Download concluído - game_id={game_id}")
         
         if self._is_closing:
@@ -574,14 +606,30 @@ class DownloadProgressOverlay(QDialog):
         
         try:
             self._is_closing = True
-            # Fechar dialog imediatamente
+            
+            # Desconectar signals antes de fechar para evitar problemas
+            try:
+                if hasattr(self, 'worker') and self.worker:
+                    self.worker.signals.progress.disconnect()
+                    self.worker.signals.status.disconnect()
+                    self.worker.signals.success.disconnect()
+                    self.worker.signals.error.disconnect()
+            except:
+                pass
+            
+            # Fechar o DownloadProgressOverlay
+            log_message("[DOWNLOAD SUCCESS] Fechando DownloadProgressOverlay...")
             self.done(QDialog.Accepted)
+            log_message("[DOWNLOAD SUCCESS] DownloadProgressOverlay fechado")
         except Exception as e:
             log_message(f"[DOWNLOAD SUCCESS] Erro ao fechar: {e}")
             try:
                 self.accept()
             except:
-                self.hide()
+                try:
+                    self.hide()
+                except:
+                    pass
 
     def on_download_error(self, error_msg):
         """Callback de erro"""
@@ -1185,8 +1233,10 @@ class OverlayModal(QWidget):
                     background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5ce36c, stop:1 #47D64E);
                 }
             """)
+            # Iniciar download sem fechar o modal principal
+            # O DownloadProgressOverlay será fechado quando o download terminar
             download_btn.clicked.connect(lambda: self.parent_widget.start_download_from_api(game_id, details.get('nome', 'Jogo')))
-            download_btn.clicked.connect(self.close_modal)
+            # NÃO fechar o modal principal - apenas o DownloadProgressOverlay fecha
         else:
             download_btn.setText("❌ Não Disponível")
             download_btn.setEnabled(False)
@@ -2546,21 +2596,10 @@ class GameApp(QWidget):
                 log_message(f"[START_DOWNLOAD] exec_() retornou com resultado: {result}")
             except Exception as exec_error:
                 log_message(f"[START_DOWNLOAD] ERRO durante exec_(): {exec_error}", include_traceback=True)
-                # Tentar fechar dialog mesmo com erro
-                try:
-                    if progress_dialog.isVisible():
-                        progress_dialog.hide()
-                except:
-                    pass
             
-            # Garantir que o dialog foi fechado corretamente
-            try:
-                if progress_dialog.isVisible():
-                    log_message("[START_DOWNLOAD] Dialog ainda visível após exec_(), ocultando...")
-                    progress_dialog.hide()
-                    log_message("[START_DOWNLOAD] Dialog ocultado")
-            except Exception as e:
-                log_message(f"[START_DOWNLOAD] Erro ao ocultar dialog: {e}")
+            # NÃO fechar o dialog automaticamente - deixar o usuário fechar quando quiser
+            # O dialog só fecha quando o usuário clicar em fechar ou quando houver erro
+            log_message("[START_DOWNLOAD] Download concluído - dialog permanece aberto")
             
             # Limpar referência de forma segura
             try:
@@ -2568,8 +2607,6 @@ class GameApp(QWidget):
                 log_message("[START_DOWNLOAD] Referência limpa")
             except Exception as e:
                 log_message(f"[START_DOWNLOAD] Erro ao limpar referência: {e}")
-            
-            log_message("[START_DOWNLOAD] Download concluído - método retornando normalmente")
         except Exception as e:
             log_message(f"[START_DOWNLOAD] ERRO ao exibir dialog de download: {e}", include_traceback=True)
             import traceback
