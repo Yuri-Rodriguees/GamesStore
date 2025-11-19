@@ -1,1 +1,1 @@
-﻿__version__ = "1.2.0-beta-old"
+﻿__version__ = "1.2.0"
