@@ -1,3 +1,5 @@
+# Exportar classes explicitamente para Cython
+__all__ = ['softwarerei', 'LoadingScreen', 'LoginWorker', 'LoginWorkerSignals']
 
 import os
 import rc
