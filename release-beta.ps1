@@ -5,13 +5,119 @@ param(
     [Parameter(Mandatory=$true)]
     [string]$Message,
     
-    [switch]$CommitAll = $false
+    [switch]$CommitAll = $false,
+    
+    [switch]$CreateOldVersion = $false
 )
 
-$tag = "v$Version-beta"
 $backupDir = "backup"
 $requiredFiles = @("uxmod.py", "xcore.py", "datax.py")
 
+# Função para calcular versão OLD
+function Get-OldVersion {
+    param([string]$Version)
+    $parts = $Version.Split('.')
+    if ($parts.Count -ge 3) {
+        $patch = [int]$parts[2]
+        $patch = [Math]::Max(0, $patch - 1)
+        $parts[2] = $patch.ToString()
+        return $parts -join '.'
+    }
+    return "0.9.9"
+}
+
+# Se criar versão OLD, fazer isso primeiro
+if ($CreateOldVersion) {
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Magenta
+    Write-Host "  CRIANDO VERSAO OLD PRIMEIRO...      " -ForegroundColor Magenta
+    Write-Host "========================================" -ForegroundColor Magenta
+    
+    $oldVersion = Get-OldVersion -Version $Version
+    $oldTag = "v$oldVersion-beta-old"
+    
+    Write-Host ""
+    Write-Host "Versao OLD: $oldVersion" -ForegroundColor Cyan
+    Write-Host "Tag OLD: $oldTag" -ForegroundColor Cyan
+    Write-Host ""
+    
+    # Criar versão OLD usando o workflow do GitHub via API
+    # Primeiro, precisamos fazer commit da versão OLD
+    Write-Host "[OLD] Atualizando version.py para OLD..." -ForegroundColor Cyan
+    $oldVersionContent = "__version__ = `"$oldVersion-beta-old`""
+    [System.IO.File]::WriteAllText("version.py", $oldVersionContent, [System.Text.Encoding]::UTF8)
+    Write-Host "   OK version.py = $oldVersion-beta-old" -ForegroundColor Green
+    
+    Write-Host "[OLD] Adicionando ao Git..." -ForegroundColor Cyan
+    git add version.py
+    $oldCommitMessage = "beta-old: $oldTag - Versao antiga para testes de atualizacao"
+    git commit -m $oldCommitMessage
+    
+    if ($LASTEXITCODE -eq 0) {
+        git push origin develop
+        Write-Host "   OK Push OLD concluido" -ForegroundColor Green
+    }
+    
+    # Criar tag OLD
+    Write-Host "[OLD] Criando tag OLD..." -ForegroundColor Cyan
+    git tag -d $oldTag 2>$null
+    git tag -a $oldTag -m $oldCommitMessage
+    git push origin $oldTag --force
+    Write-Host "   OK Tag OLD criada: $oldTag" -ForegroundColor Green
+    
+    # Tentar acionar o workflow OLD via API do GitHub (se token disponível)
+    $githubToken = $env:GITHUB_TOKEN
+    if (-not $githubToken) {
+        $githubToken = $env:GH_TOKEN
+    }
+    
+    if ($githubToken) {
+        Write-Host "[OLD] Acionando workflow de build OLD..." -ForegroundColor Cyan
+        try {
+            $headers = @{
+                "Accept" = "application/vnd.github+json"
+                "Authorization" = "Bearer $githubToken"
+                "X-GitHub-Api-Version" = "2022-11-28"
+            }
+            
+            $body = @{
+                ref = "develop"
+                inputs = @{
+                    version = $oldVersion
+                    base_version = $Version
+                }
+            } | ConvertTo-Json
+            
+            $response = Invoke-RestMethod -Uri "https://api.github.com/repos/Yuri-Rodriguees/GamesStore/actions/workflows/release-beta-old.yml/dispatches" `
+                -Method Post -Headers $headers -Body $body -ContentType "application/json"
+            
+            Write-Host "   OK Workflow OLD acionado via API" -ForegroundColor Green
+        } catch {
+            Write-Host "   AVISO: Nao foi possivel acionar workflow via API" -ForegroundColor Yellow
+            Write-Host "   Voce precisa acionar manualmente o workflow 'Beta Release OLD'" -ForegroundColor Yellow
+            Write-Host "   Link: https://github.com/Yuri-Rodriguees/GamesStore/actions/workflows/release-beta-old.yml" -ForegroundColor Cyan
+        }
+    } else {
+        Write-Host "   AVISO: Token GitHub nao encontrado (GITHUB_TOKEN ou GH_TOKEN)" -ForegroundColor Yellow
+        Write-Host "   Voce precisa acionar manualmente o workflow 'Beta Release OLD'" -ForegroundColor Yellow
+        Write-Host "   Link: https://github.com/Yuri-Rodriguees/GamesStore/actions/workflows/release-beta-old.yml" -ForegroundColor Cyan
+        Write-Host "   Versao OLD: $oldVersion" -ForegroundColor Cyan
+    }
+    
+    Write-Host ""
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host "  VERSAO OLD CRIADA!                    " -ForegroundColor Green
+    Write-Host "========================================" -ForegroundColor Green
+    Write-Host ""
+    Write-Host "Aguardando workflow OLD iniciar (15s)..." -ForegroundColor Yellow
+    Start-Sleep -Seconds 15
+    Write-Host ""
+    Write-Host "Agora criando versao NEW..." -ForegroundColor Yellow
+    Write-Host ""
+    Start-Sleep -Seconds 5
+}
+
+$tag = "v$Version-beta"
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Yellow
 Write-Host "  BETA RELEASE v$Version (NAO PUBLICA) " -ForegroundColor Yellow
@@ -160,6 +266,17 @@ Write-Host "   - Esta versao NAO aparecera para usuarios normais" -ForegroundCol
 Write-Host "   - Apenas quem tiver o link direto pode baixar" -ForegroundColor White
 Write-Host "   - Usuarios normais so veem releases STABLE" -ForegroundColor White
 Write-Host "   - 2 versoes serao geradas: Debug (console) e Release" -ForegroundColor White
+
+if ($CreateOldVersion) {
+    $oldVersion = Get-OldVersion -Version $Version
+    Write-Host ""
+    Write-Host "TESTE DE ATUALIZACAO:" -ForegroundColor Magenta
+    Write-Host "   - Versao OLD criada: v$oldVersion-beta-old" -ForegroundColor White
+    Write-Host "   - Versao NEW criada: v$Version-beta" -ForegroundColor White
+    Write-Host "   - Para testar: instale a versao OLD primeiro" -ForegroundColor White
+    Write-Host "   - A versao OLD detectara automaticamente a NEW como atualizacao" -ForegroundColor White
+    Write-Host "   - Link OLD: https://github.com/Yuri-Rodriguees/GamesStore/releases/tag/v$oldVersion-beta-old" -ForegroundColor Cyan
+}
 
 Write-Host ""
 Write-Host "LINKS UTEIS:" -ForegroundColor Cyan

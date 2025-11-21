@@ -1,10 +1,19 @@
 import os
 import sys
 import updater
-from uxmod import softwarerei
+import uxmod
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtWidgets import QApplication
+
+# Importação mais robusta para módulos compilados
+try:
+    from uxmod import softwarerei
+except ImportError:
+    # Fallback: importar o módulo e acessar a classe
+    softwarerei = getattr(uxmod, 'softwarerei', None)
+    if softwarerei is None:
+        raise ImportError("Não foi possível importar 'softwarerei' de 'uxmod'")
 
 
 def setup_dark_palette(app):
@@ -40,7 +49,14 @@ def main():
 
 def check_updates(window):
     try:
-        updater.check_and_update(window, show_no_update_message=False)
+        # Verificar versão atual para decidir se deve verificar beta
+        try:
+            from version import __version__
+            check_beta = "-old" in __version__.lower()
+        except:
+            check_beta = False
+        
+        updater.check_and_update(window, show_no_update_message=False, check_beta=check_beta)
     except Exception as e:
         print(f"Erro ao verificar atualizações: {e}")
 

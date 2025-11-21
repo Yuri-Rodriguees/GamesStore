@@ -3,7 +3,10 @@ name: Release Completo
 on:
   push:
     tags:
-      - 'v*.*.*'  # Apenas tags sem -beta
+    tags:
+      - 'v*.*.*'
+      - '!*-beta*'
+      - '!*-old*'
   workflow_dispatch:
 
 permissions:
@@ -129,6 +132,8 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --hidden-import "uxmod" `
+          --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -145,6 +150,7 @@ jobs:
           --hidden-import "urllib3" `
           --hidden-import "certifi" `
           --hidden-import "charset_normalizer" `
+          --noupx `
           --name "GamesStore-Debug" main.py 2>&1 | Tee-Object -FilePath "build-debug.log"
       shell: pwsh
     
@@ -264,6 +270,8 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --hidden-import "uxmod" `
+          --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -280,6 +288,7 @@ jobs:
           --hidden-import "urllib3" `
           --hidden-import "certifi" `
           --hidden-import "charset_normalizer" `
+          --noupx `
           --name "GamesStore" main.py
       shell: pwsh
     

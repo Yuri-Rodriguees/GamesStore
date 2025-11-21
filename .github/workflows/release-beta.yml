@@ -129,6 +129,8 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --hidden-import "uxmod" `
+          --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -145,6 +147,7 @@ jobs:
           --hidden-import "urllib3" `
           --hidden-import "certifi" `
           --hidden-import "charset_normalizer" `
+          --noupx `
           --name "GamesStore-Debug" main.py 2>&1 | Tee-Object -FilePath "build-debug.log"
       shell: pwsh
     
@@ -252,9 +255,9 @@ jobs:
         }
       shell: pwsh
     
-    - name: Build RELEASE EXE (SEM CONSOLE)
+    - name: Build RELEASE EXE (COM CONSOLE - DEBUG)
       run: |
-        pyinstaller --noconfirm --onefile --windowed `
+        pyinstaller --noconfirm --onefile --console `
           --icon "assets/Images/icon.ico" `
           --add-data "config;config/" `
           --add-data "config.py;." `
@@ -264,6 +267,8 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --hidden-import "uxmod" `
+          --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -280,6 +285,7 @@ jobs:
           --hidden-import "urllib3" `
           --hidden-import "certifi" `
           --hidden-import "charset_normalizer" `
+          --noupx `
           --name "GamesStore" main.py
       shell: pwsh
     
@@ -314,9 +320,18 @@ jobs:
           
           **Esta é uma versão de testes interna.**
           
-          ❌ Não aparece na verificação automática de atualizações
+          ❌ Não aparece na verificação automática de atualizações (versões estáveis)
           ❌ Não é recomendada para usuários finais
           ✅ Apenas para testadores com acesso ao link
+          
+          ### 🧪 Para Testar Atualizações:
+          
+          Se você instalou a versão **OLD** (vX.X.X-beta-old), esta versão será detectada automaticamente como atualização!
+          
+          1. Instale a versão OLD primeiro (gerada pelo workflow `release-beta-old.yml`)
+          2. Execute o aplicativo
+          3. O sistema detectará automaticamente esta versão como atualização
+          4. Teste o processo completo de atualização
           
           ### 📦 Downloads Disponíveis
           

@@ -11,6 +11,9 @@ extensions = [
 setup(
     ext_modules=cythonize(
         extensions,
-        compiler_directives={'language_level': "3"}
+        compiler_directives={
+            'language_level': "3",
+            'embedsignature': True,  # Preserva assinaturas de funções
+        }
     )
 )
