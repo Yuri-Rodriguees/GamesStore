@@ -49,7 +49,12 @@ if ($CreateOldVersion) {
     Write-Host "   OK version.py = $oldVersion-beta-old" -ForegroundColor Green
     
     Write-Host "[OLD] Adicionando ao Git..." -ForegroundColor Cyan
-    git add version.py
+    if ($CommitAll) {
+        Write-Host "   [OLD] Adicionando TODOS os arquivos (--all)" -ForegroundColor Yellow
+        git add .
+    } else {
+        git add version.py
+    }
     $oldCommitMessage = "beta-old: $oldTag - Versao antiga para testes de atualizacao"
     git commit -m $oldCommitMessage
     
