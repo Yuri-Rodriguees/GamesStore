@@ -3,7 +3,6 @@ name: Release Completo
 on:
   push:
     tags:
-    tags:
       - 'v*.*.*'
       - '!*-beta*'
       - '!*-old*'
