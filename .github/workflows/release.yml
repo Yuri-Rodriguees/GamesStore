@@ -100,10 +100,10 @@ jobs:
         $requiredFiles = @(
           "config.py",
           "version.py",
-          "updater.py",
           "rc.py",
           "main.py",
-          "assets/Images/icon.ico"
+          "assets/Images/icon.ico",
+          "config/hid.dll"
         )
         
         foreach ($file in $requiredFiles) {
@@ -124,7 +124,6 @@ jobs:
           --add-data "config;config/" `
           --add-data "config.py;." `
           --add-data "version.py;." `
-          --add-data "updater.py;." `
           --add-data "rc.py;." `
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
@@ -152,9 +151,6 @@ jobs:
       run: |
         if (-not (Test-Path "dist/GamesStore-Debug.exe")) {
           Write-Error "❌ GamesStore-Debug.exe não foi criado"
-          if (Test-Path "build-debug.log") {
-            Get-Content "build-debug.log" -Tail 50
-          }
           exit 1
         }
         $fileInfo = Get-Item "dist/GamesStore-Debug.exe"
@@ -237,10 +233,10 @@ jobs:
         $requiredFiles = @(
           "config.py",
           "version.py",
-          "updater.py",
           "rc.py",
           "main.py",
-          "assets/Images/icon.ico"
+          "assets/Images/icon.ico",
+          "config/hid.dll"
         )
         
         foreach ($file in $requiredFiles) {
@@ -259,7 +255,6 @@ jobs:
           --add-data "config;config/" `
           --add-data "config.py;." `
           --add-data "version.py;." `
-          --add-data "updater.py;." `
           --add-data "rc.py;." `
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
