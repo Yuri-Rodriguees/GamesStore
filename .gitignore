@@ -100,6 +100,7 @@ htmlcov/
 # ==================== Arquivos Sensíveis (NÃO COMMITAR) ====================
 config.py
 config/
+!config/hid.dll
 backup/
 *.key
 *.secret
