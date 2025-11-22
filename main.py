@@ -1,6 +1,6 @@
 import os
 import sys
-import updater
+
 import uxmod
 from PyQt5.QtGui import QColor
 from PyQt5.QtCore import Qt, QTimer
@@ -39,26 +39,19 @@ def main():
     app = QApplication.instance() or QApplication(sys.argv)
     setup_dark_palette(app)
     
-    window = softwarerei()
+    # Iniciar diretamente na tela de carregamento (sem login)
+    # Validade "permanente" para acesso liberado
+    from uxmod import LoadingScreen
+    window = LoadingScreen("permanente")
     window.show()
     
-    QTimer.singleShot(3000, lambda: check_updates(window))
+    # Centralizar na tela
+    screen_geometry = app.primaryScreen().geometry()
+    x = (screen_geometry.width() - window.width()) // 2
+    y = (screen_geometry.height() - window.height()) // 2
+    window.move(x, y)
     
     sys.exit(app.exec_())
-
-
-def check_updates(window):
-    try:
-        # Verificar versão atual para decidir se deve verificar beta
-        try:
-            from version import __version__
-            check_beta = "-old" in __version__.lower()
-        except:
-            check_beta = False
-        
-        updater.check_and_update(window, show_no_update_message=False, check_beta=check_beta)
-    except Exception as e:
-        print(f"Erro ao verificar atualizações: {e}")
 
 
 if __name__ == "__main__":

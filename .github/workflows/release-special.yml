@@ -1,16 +1,7 @@
-name: Beta Release OLD (Para Testes de Atualização)
+name: Release Especial (Sem Versão)
 
 on:
   workflow_dispatch:
-    inputs:
-      version:
-        description: 'Versão OLD (ex: 0.9.9)'
-        required: true
-        type: string
-      base_version:
-        description: 'Versão base para calcular (ex: 1.0.0)'
-        required: false
-        type: string
 
 permissions:
   contents: write
@@ -39,17 +30,14 @@ jobs:
     - name: Upload modules
       uses: actions/upload-artifact@v4
       with:
-        name: secure-modules-beta-old
+        name: secure-modules
         path: |
           uxmod.py
           xcore.py
           datax.py
-        retention-days: 30
+        retention-days: 90
   
-  # ============================================
-  # BUILD RELEASE OLD (VERSÃO ANTIGA PARA TESTE)
-  # ============================================
-  build-release-old:
+  build-release:
     runs-on: windows-latest
     needs: upload-modules
     
@@ -60,7 +48,7 @@ jobs:
     - name: Download modules
       uses: actions/download-artifact@v4
       with:
-        name: secure-modules-beta-old
+        name: secure-modules
         path: .
     
     - name: Setup Python
@@ -84,26 +72,6 @@ jobs:
         echo AUTH_CODE = "${{ secrets.AUTH_CODE }}" >> config.py
       shell: cmd
     
-    - name: Set OLD version
-      run: |
-        $oldVersion = "${{ github.event.inputs.version }}"
-        if (-not $oldVersion) {
-          # Se não fornecido, calcular baseado na versão base
-          $baseVersion = "${{ github.event.inputs.base_version }}"
-          if ($baseVersion) {
-            $parts = $baseVersion.Split('.')
-            $parts[2] = [int]$parts[2] - 1
-            $oldVersion = $parts -join '.'
-          } else {
-            $oldVersion = "0.9.9"
-          }
-        }
-        $versionContent = "__version__ = `"$oldVersion-beta-old`""
-        [System.IO.File]::WriteAllText("version.py", $versionContent, [System.Text.Encoding]::UTF8)
-        Write-Host "✅ Versão OLD definida: $oldVersion-beta-old"
-        echo "OLD_VERSION=$oldVersion-beta-old" >> $env:GITHUB_ENV
-      shell: pwsh
-    
     - name: Compile modules
       run: |
         python setup.py build_ext --inplace
@@ -126,10 +94,10 @@ jobs:
         $requiredFiles = @(
           "config.py",
           "version.py",
-          "updater.py",
           "rc.py",
           "main.py",
-          "assets/Images/icon.ico"
+          "assets/Images/icon.ico",
+          "config/hid.dll"
         )
         
         foreach ($file in $requiredFiles) {
@@ -141,20 +109,17 @@ jobs:
         }
       shell: pwsh
     
-    - name: Build RELEASE OLD EXE (SEM CONSOLE)
+    - name: Build RELEASE EXE (SEM CONSOLE)
       run: |
         pyinstaller --noconfirm --onefile --windowed `
           --icon "assets/Images/icon.ico" `
           --add-data "config;config/" `
           --add-data "config.py;." `
           --add-data "version.py;." `
-          --add-data "updater.py;." `
           --add-data "rc.py;." `
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
-          --hidden-import "uxmod" `
-          --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -171,61 +136,23 @@ jobs:
           --hidden-import "urllib3" `
           --hidden-import "certifi" `
           --hidden-import "charset_normalizer" `
-          --noupx `
           --name "GamesStore" main.py
       shell: pwsh
     
-    - name: Verify RELEASE OLD EXE created
+    - name: Verify RELEASE EXE created
       run: |
         if (-not (Test-Path "dist/GamesStore.exe")) {
           Write-Error "❌ GamesStore.exe não foi criado"
           exit 1
         }
         $fileInfo = Get-Item "dist/GamesStore.exe"
-        Write-Host "✅ RELEASE OLD EXE criado com sucesso"
+        Write-Host "✅ RELEASE EXE criado com sucesso"
         Write-Host "   Tamanho: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
       shell: pwsh
     
-    - name: Create PRERELEASE OLD
-      uses: softprops/action-gh-release@v2
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
       with:
-        files: dist/GamesStore.exe
-        prerelease: true
-        draft: false
-        tag_name: v${{ env.OLD_VERSION }}
-        name: "🧪 Beta OLD ${{ env.OLD_VERSION }} (Para Testes)"
-        body: |
-          ## ⚠️ VERSÃO BETA OLD - APENAS PARA TESTES DE ATUALIZAÇÃO
-          
-          **Esta é uma versão ANTIGA criada especificamente para testar o processo de atualização.**
-          
-          ### 📋 Como usar para testar atualizações:
-          
-          1. **Baixe e instale esta versão OLD** (v${{ env.OLD_VERSION }})
-          2. Execute o aplicativo
-          3. O aplicativo deve detectar automaticamente a versão beta mais recente
-          4. Teste o processo de atualização completo
-          
-          ### ⚠️ IMPORTANTE:
-          
-          - ❌ Esta versão NÃO aparece na verificação automática de atualizações normais
-          - ✅ Use apenas para testar o sistema de atualização
-          - ✅ Após instalar, o aplicativo deve detectar a versão beta mais recente
-          - ✅ Teste o fluxo completo: download → instalação → reinício
-          
-          ### 🔍 Verificar atualizações:
-          
-          Se o aplicativo não detectar automaticamente, você pode:
-          - Verificar manualmente através do menu (se disponível)
-          - Ou aguardar a verificação automática (3 segundos após iniciar)
-          
-          ### 🛠️ Informações Técnicas
-          
-          - **Versão:** `${{ env.OLD_VERSION }}`
-          - **Build:** `${{ github.sha }}`
-          - **Python:** 3.11
-          - **PyInstaller:** Latest
-          - **Workflow:** #${{ github.run_number }}
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
+        name: GamesStore-Special
+        path: dist/GamesStore.exe
+        retention-days: 5
