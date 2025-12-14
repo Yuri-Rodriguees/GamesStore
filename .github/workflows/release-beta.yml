@@ -28,7 +28,11 @@ jobs:
             exit 1
           fi
         done
-        echo "✅ Módulos encontrados"
+        if [ ! -d "core" ]; then
+          echo "ERRO: diretório core não encontrado"
+          exit 1
+        fi
+        echo "✅ Módulos e diretório core encontrados"
     
     - name: Upload modules
       uses: actions/upload-artifact@v4
@@ -38,6 +42,7 @@ jobs:
           uxmod.py
           xcore.py
           datax.py
+          core/
         retention-days: 30
   
   # ============================================
@@ -129,6 +134,7 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --add-data "core;core/" `
           --hidden-import "uxmod" `
           --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `
@@ -267,6 +273,7 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --add-data "core;core/" `
           --hidden-import "uxmod" `
           --hidden-import "uxmod.softwarerei" `
           --collect-all "keyboard" `

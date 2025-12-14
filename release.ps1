@@ -11,6 +11,7 @@ param(
 $tag = "v$Version"
 $backupDir = "backup"
 $requiredFiles = @("uxmod.py", "xcore.py", "datax.py")
+$requiredDirs = @("core")
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Cyan
@@ -29,12 +30,17 @@ foreach ($file in $requiredFiles) {
         $missing += $file
     }
 }
+foreach ($dir in $requiredDirs) {
+    if (-not (Test-Path $dir -PathType Container)) {
+        $missing += $dir
+    }
+}
 
 if ($missing.Count -gt 0) {
-    Write-Host "   X ERRO: Arquivos faltando: $($missing -join ', ')" -ForegroundColor Red
+    Write-Host "   X ERRO: Arquivos/pastas faltando: $($missing -join ', ')" -ForegroundColor Red
     exit 1
 }
-Write-Host "   OK Módulos encontrados" -ForegroundColor Green
+Write-Host "   OK Módulos e diretórios encontrados" -ForegroundColor Green
 
 # ============================================
 # [2/6] Backup
@@ -67,7 +73,7 @@ Write-Host "   OK version.py = $Version" -ForegroundColor Green
 # ============================================
 Write-Host ""
 Write-Host "[4/6] Adicionando arquivos ao Git..." -ForegroundColor Yellow
-git add uxmod.py xcore.py datax.py version.py
+git add uxmod.py xcore.py datax.py version.py core/
 
 if ($CommitAll) {
     Write-Host "   AVISO: Adicionando TODOS os arquivos (--all)" -ForegroundColor Yellow

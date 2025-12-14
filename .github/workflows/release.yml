@@ -28,7 +28,11 @@ jobs:
             exit 1
           fi
         done
-        echo "✅ Módulos encontrados"
+        if [ ! -d "core" ]; then
+          echo "ERRO: diretório core não encontrado"
+          exit 1
+        fi
+        echo "✅ Módulos e diretório core encontrados"
     
     - name: Upload modules
       uses: actions/upload-artifact@v4
@@ -38,6 +42,7 @@ jobs:
           uxmod.py
           xcore.py
           datax.py
+          core/
         retention-days: 90
   
   # ============================================
@@ -128,6 +133,7 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --add-data "core;core/" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -259,6 +265,7 @@ jobs:
           --add-data "uxmod.pyd;." `
           --add-data "xcore.pyd;." `
           --add-data "datax.pyd;." `
+          --add-data "core;core/" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
           --hidden-import "pyperclip" `
@@ -330,6 +337,7 @@ jobs:
           
           ### 📝 Changelog
           
+          - ✅ Refatoração modular do código (módulo core/)
           - ✅ Correções no ManualInstallScreen
           - ✅ QFileDialog funcionando corretamente
           - ✅ Hidden imports completos do PyQt5

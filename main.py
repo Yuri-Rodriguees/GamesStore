@@ -39,10 +39,8 @@ def main():
     app = QApplication.instance() or QApplication(sys.argv)
     setup_dark_palette(app)
     
-    # Iniciar diretamente na tela de carregamento (sem login)
-    # Validade "permanente" para acesso liberado
-    from uxmod import LoadingScreen
-    window = LoadingScreen("permanente")
+    # Iniciar na tela de login
+    window = softwarerei()
     window.show()
     
     # Centralizar na tela
