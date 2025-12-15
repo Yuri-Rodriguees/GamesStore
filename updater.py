@@ -441,7 +441,6 @@ if exist "{old_exe_backup}" (
     del /F /Q "{old_exe_backup}" >nul 2>&1
 )
 
-start "" "{current_exe}"
 del /F /Q "{temp_file}" >nul 2>&1
 exit
 '''
@@ -452,18 +451,16 @@ exit
         
         time.sleep(0.5)
         
-        try:
-            from PyQt5.QtWidgets import QApplication
-            app = QApplication.instance()
-            if app:
-                for widget in app.allWidgets():
-                    if widget != progress_dialog:
-                        try:
-                            widget.close()
-                        except:
-                            pass
-        except:
-            pass
+        # Mensagem de sucesso
+        if progress_dialog:
+            progress_dialog.status_label.setText("Atualizado com sucesso!")
+            progress_dialog.progress_bar.setValue(100)
+            
+            QMessageBox.information(
+                progress_dialog,
+                "Atualização Concluída",
+                "O aplicativo foi atualizado com sucesso!\n\nO sistema fechará automaticamente em 5 segundos.\nPor favor, abra o aplicativo novamente para usar a nova versão."
+            )
         
         time.sleep(0.5)
         
@@ -476,7 +473,8 @@ exit
             stderr=subprocess.DEVNULL
         )
         
-        time.sleep(1.0)
+        # Aguardar 5 segundos antes de fechar
+        time.sleep(5.0)
         
         log("Fechando aplicativo para atualizacao...")
         sys.exit(0)
