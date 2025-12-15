@@ -1,0 +1,36 @@
+name: Manual Cleanup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Remove sensitive files
+        run: |
+          git config --global user.name "GitHub Action"
+          git config --global user.email "action@github.com"
+          
+          echo "Removendo arquivos sensíveis..."
+          FILES_TO_REMOVE="uxmod.py xcore.py utils.py updater.py ui_components.py core assets/config backup venv logs release.ps1 secure_release.ps1 release-beta.ps1 setup.py config.py .gitignore log.txt config"
+          
+          for file in $FILES_TO_REMOVE; do
+              git rm -rf --ignore-unmatch "$file"
+          done
+          
+          if git diff --staged --quiet; then
+            echo "Nada para limpar."
+          else
+            git commit -m "Manual Security Cleanup"
+            git push
+            echo "Limpeza concluída."
+          fi
