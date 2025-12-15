@@ -51,24 +51,20 @@ class GameApp(QWidget):
         self.api_url_site = API_URL_SITE
         self.auth_code = AUTH_CODE
         
-        # Cache de imagens otimizado (limite de 100 imagens)
         self.image_cache = {}
         self.image_cache['__parent_app'] = self
-        self._max_cache_size = 100
+        self._max_cache_size = 200
         
-        # Thread pool único para todas as operações assíncronas
         self.thread_pool = QThreadPool()
-        self.thread_pool.setMaxThreadCount(4)
+        self.thread_pool.setMaxThreadCount(12)
         
-        # Configurar janela
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.setGeometry(200, 200, 1200, 800)
         self.setFixedSize(1200, 800)
-        self.setStyleSheet("background: #1a1a1a; color: white;")
+        self.setStyleSheet("background: #121212; color: white;")
         self.setWindowIcon(QIcon(":/imgs/icon.ico"))
         self.setWindowTitle(f"Games Store v{__version__}")
         
-        # Variáveis de controle
         self.search_thread = None
         self.search_timer = QTimer()
         self.search_timer.setSingleShot(True)
@@ -81,10 +77,8 @@ class GameApp(QWidget):
         self.steam_path = None
         self.selected_file_path = None
         
-        # Inicializar interface
         self.init_ui()
         
-        # Carregar Steam
         QTimer.singleShot(0, self.get_steam_directory)
     
     # ========================================================================
@@ -112,6 +106,7 @@ class GameApp(QWidget):
         self.tela_home = QWidget()
         self.tela_jogos = QWidget()
         self.tela_dlcs = QWidget()
+        self.tela_configuracoes = QWidget()
         self.tela_manual_install = ManualInstallScreen(self)
         self.tela_download = None
         self.tela_detalhes = None
@@ -120,6 +115,7 @@ class GameApp(QWidget):
         self.pages.addWidget(self.tela_home)
         self.pages.addWidget(self.tela_jogos)
         self.pages.addWidget(self.tela_dlcs)
+        self.pages.addWidget(self.tela_configuracoes)
         self.manual_install_index = self.pages.addWidget(self.tela_manual_install)
         
         content.addWidget(self.pages, 4)
@@ -129,59 +125,104 @@ class GameApp(QWidget):
         self.setup_home()
         self.setup_jogos()
         self.setup_dlcs()
+        self.setup_configuracoes()
     
     def create_sidebar(self):
-        """Cria menu lateral moderno"""
+        """Cria menu lateral moderno e minimalista"""
         sidebar = QFrame()
         sidebar.setFixedWidth(200)
         sidebar.setStyleSheet("""
             QFrame {
-                background: #1e1e1e;
-                border-right: 1px solid #333;
+                background: #121212;
             }
         """)
         
         layout = QVBoxLayout(sidebar)
-        layout.setContentsMargins(10, 20, 10, 10)
-        layout.setAlignment(Qt.AlignTop)
+        layout.setContentsMargins(0, 24, 0, 24)
+        layout.setSpacing(4)
         
-        self.btn_home = self.create_menu_button("🏠 Home", 0)
-        self.btn_games = self.create_menu_button("🎮 Jogos", 1)
-        self.btn_dlcs = self.create_menu_button("📦 DLCs", 2)
+        # Botões de navegação
+        self.sidebar_buttons = []
+        
+        self.btn_home = self.create_menu_button("🏠", "Home", 0)
+        self.btn_games = self.create_menu_button("🎮", "Meus Jogos", 1)
+        self.btn_dlcs = self.create_menu_button("📦", "DLCs", 2)
+        self.btn_config = self.create_menu_button("⚙", "Configuracoes", 3)
         
         layout.addWidget(self.btn_home)
         layout.addWidget(self.btn_games)
         layout.addWidget(self.btn_dlcs)
         layout.addStretch()
+        layout.addWidget(self.btn_config)
+        
+        # Ativar primeiro botão por padrão
+        self.btn_home.setProperty("active", True)
+        self._update_sidebar_style(self.btn_home)
         
         return sidebar
     
-    def create_menu_button(self, text, page_index):
-        """Cria botão estilizado do menu"""
-        btn = QPushButton(text)
-        btn.setStyleSheet("""
-            QPushButton {
-                background: transparent;
-                color: white;
-                padding: 15px 20px;
-                font-size: 15px;
-                font-weight: 600;
-                border-radius: 8px;
-                text-align: left;
-                border: none;
-            }
-            QPushButton:hover {
-                background: #2a2a2a;
-            }
-            QPushButton:pressed {
-                background: #47D64E;
-                color: #000;
-            }
-        """)
-        btn.setMinimumHeight(50)
+    def create_menu_button(self, icon, text, page_index):
+        """Cria botão estilizado do menu com indicador ativo"""
+        btn = QPushButton(f"  {icon}   {text}")
+        btn.setFixedHeight(48)
         btn.setCursor(Qt.PointingHandCursor)
-        btn.clicked.connect(lambda: self.pages.setCurrentIndex(page_index))
+        btn.setFont(QFont("Arial", 11))
+        btn.setProperty("active", False)
+        btn.setProperty("page_index", page_index)
+        
+        self._update_sidebar_style(btn)
+        
+        btn.clicked.connect(lambda: self._on_sidebar_click(btn, page_index))
+        self.sidebar_buttons.append(btn) if hasattr(self, 'sidebar_buttons') else None
+        
         return btn
+    
+    def _on_sidebar_click(self, clicked_btn, page_index):
+        """Handler de clique na sidebar"""
+        self.pages.setCurrentIndex(page_index)
+        
+        # Atualizar estado ativo
+        for btn in [self.btn_home, self.btn_games, self.btn_dlcs, self.btn_config]:
+            btn.setProperty("active", btn == clicked_btn)
+            self._update_sidebar_style(btn)
+    
+    def _update_sidebar_style(self, btn):
+        """Atualiza estilo do botão baseado no estado"""
+        is_active = btn.property("active")
+        
+        if is_active:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: qlineargradient(
+                        x1:0, y1:0, x2:1, y2:0,
+                        stop:0 rgba(71, 214, 78, 0.15),
+                        stop:1 transparent
+                    );
+                    color: #47D64E;
+                    border: none;
+                    border-left: 3px solid #47D64E;
+                    border-radius: 0px;
+                    text-align: left;
+                    padding-left: 20px;
+                    font-weight: 600;
+                }
+            """)
+        else:
+            btn.setStyleSheet("""
+                QPushButton {
+                    background: transparent;
+                    color: rgba(255, 255, 255, 0.6);
+                    border: none;
+                    border-left: 3px solid transparent;
+                    border-radius: 0px;
+                    text-align: left;
+                    padding-left: 20px;
+                }
+                QPushButton:hover {
+                    background: rgba(255, 255, 255, 0.05);
+                    color: rgba(255, 255, 255, 0.9);
+                }
+            """)
     
     # ========================================================================
     # SEÇÃO 2: HOME PAGE
@@ -201,9 +242,6 @@ class GameApp(QWidget):
         
         header = self.create_modern_header()
         layout.addWidget(header)
-        
-        self.hero_banner = self.create_hero_banner()
-        layout.addWidget(self.hero_banner)
         
         self.search_results_main_container = QScrollArea()
         self.search_results_main_container.setWidgetResizable(True)
@@ -251,9 +289,13 @@ class GameApp(QWidget):
         games_layout.setSpacing(30)
         
         self.all_games_container = QWidget()
-        self.all_games_section = self.create_game_section("🎮 Todos os Jogos", self.all_games_container)
+        self.all_games_section = self.create_game_section("Todos os Jogos", self.all_games_container)
+        
+        self.popular_games_container = QWidget()
+        self.popular_games_section = self.create_game_section("Jogos Populares", self.popular_games_container)
         
         games_layout.addWidget(self.all_games_section)
+        games_layout.addWidget(self.popular_games_section)
         games_layout.addStretch()
         
         self.games_scroll_area.setWidget(games_container)
@@ -263,109 +305,67 @@ class GameApp(QWidget):
         QTimer.singleShot(100, self.load_games_from_api)
 
     def create_modern_header(self):
-        """Header com busca em tempo real"""
+        """Header minimalista com busca em tempo real"""
         header = QFrame()
-        header.setFixedHeight(80)
+        header.setFixedHeight(72)
         header.setStyleSheet("""
             QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 rgba(26, 26, 26, 255), stop:1 rgba(26, 26, 26, 0));
+                background: transparent;
                 border: none;
             }
         """)
         
         layout = QHBoxLayout(header)
-        layout.setContentsMargins(30, 20, 30, 20)
+        layout.setContentsMargins(24, 16, 24, 16)
         
-        logo = QLabel("🎮 GameStore")
-        logo.setFont(QFont("Arial", 18, QFont.Bold))
-        logo.setStyleSheet("color: #47D64E;")
-        
-        self.search_input.setPlaceholderText("🔍 Buscar jogos na Steam...")
-        self.search_input.setFixedHeight(45)
-        self.search_input.setFixedWidth(450)
+        # Campo de busca moderno
+        self.search_input.setPlaceholderText("Buscar jogos...")
+        self.search_input.setFixedHeight(42)
+        self.search_input.setFixedWidth(400)
+        self.search_input.setFont(QFont("Arial", 11))
         self.search_input.setStyleSheet("""
             QLineEdit {
-                background-color: rgba(255, 255, 255, 0.1);
-                border: 2px solid rgba(71, 214, 78, 0.3);
-                border-radius: 22px;
-                padding: 10px 45px 10px 20px;
+                background: rgba(255, 255, 255, 0.06);
+                border: none;
+                border-radius: 12px;
+                padding: 10px 40px 10px 18px;
                 color: white;
-                font-size: 14px;
             }
-            QLineEdit:focus { background-color: rgba(255, 255, 255, 0.15); border-color: #47D64E; }
-            QLineEdit::placeholder { color: rgba(255, 255, 255, 0.5); }
+            QLineEdit:focus {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            QLineEdit::placeholder {
+                color: rgba(255, 255, 255, 0.4);
+            }
         """)
         
         self.search_input.textChanged.connect(self.on_search_text_changed)
         
         clear_btn = QPushButton("✕", self.search_input)
-        clear_btn.setFixedSize(30, 30)
-        clear_btn.move(410, 7)
+        clear_btn.setFixedSize(28, 28)
+        clear_btn.move(365, 7)
         clear_btn.setCursor(Qt.PointingHandCursor)
         clear_btn.setStyleSheet("""
-            QPushButton { background: transparent; color: rgba(255, 255, 255, 0.5); border: none; border-radius: 15px; font-size: 16px; }
-            QPushButton:hover { background: rgba(255, 255, 255, 0.1); color: white; }
+            QPushButton {
+                background: transparent;
+                color: rgba(255, 255, 255, 0.4);
+                border: none;
+                border-radius: 14px;
+                font-size: 14px;
+            }
+            QPushButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+                color: white;
+            }
         """)
         clear_btn.clicked.connect(self.clear_search)
         clear_btn.hide()
         self.clear_search_btn = clear_btn
         
-        layout.addWidget(logo)
-        layout.addStretch()
         layout.addWidget(self.search_input)
+        layout.addStretch()
         
         return header
-    
-    def create_hero_banner(self):
-        """Banner de destaque"""
-        hero = QFrame()
-        hero.setFixedHeight(350)
-        hero.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #1a1a1a, stop:1 #2a2a2a);
-                border-radius: 12px;
-                margin: 20px;
-            }
-        """)
-        
-        layout = QHBoxLayout(hero)
-        layout.setContentsMargins(40, 40, 40, 40)
-        
-        info = QVBoxLayout()
-        
-        title = QLabel("Bem-vindo à GameStore")
-        title.setFont(QFont("Arial", 32, QFont.Bold))
-        title.setStyleSheet("color: white;")
-        
-        subtitle = QLabel("Milhares de jogos ao seu alcance")
-        subtitle.setFont(QFont("Arial", 16))
-        subtitle.setStyleSheet("color: rgba(255, 255, 255, 0.7);")
-        
-        cta = QPushButton("🎮 Explorar Jogos")
-        cta.setFixedSize(200, 50)
-        cta.setCursor(Qt.PointingHandCursor)
-        cta.setStyleSheet("""
-            QPushButton {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #47D64E, stop:1 #5ce36c);
-                color: #1F1F1F; border: none; border-radius: 25px; font-size: 16px; font-weight: bold;
-            }
-            QPushButton:hover {
-                background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5ce36c, stop:1 #47D64E);
-            }
-        """)
-        cta.clicked.connect(lambda: self.pages.setCurrentIndex(1))
-        
-        info.addWidget(title)
-        info.addWidget(subtitle)
-        info.addSpacing(20)
-        info.addWidget(cta, alignment=Qt.AlignLeft)
-        info.addStretch()
-        
-        layout.addLayout(info, 60)
-        layout.addStretch(40)
-        
-        return hero
     
     def create_game_section(self, title, container):
         """Seção de jogos com scroll horizontal"""
@@ -375,19 +375,32 @@ class GameApp(QWidget):
         layout.setSpacing(15)
         
         title_label = QLabel(title)
-        title_label.setFont(QFont("Arial", 18, QFont.Bold))
+        title_label.setFont(QFont("", 16))
         title_label.setStyleSheet("color: white; padding-left: 5px;")
         layout.addWidget(title_label)
         
         scroll = QScrollArea()
-        scroll.setFixedHeight(280)
+        scroll.setFixedHeight(300)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:horizontal { background: #1a1a1a; height: 8px; border-radius: 4px; }
-            QScrollBar::handle:horizontal { background: #47D64E; border-radius: 4px; min-width: 30px; }
+            QScrollBar:horizontal { 
+                height: 6px; 
+                background: transparent;
+                margin: 0;
+            }
+            QScrollBar::handle:horizontal { 
+                background: rgba(255, 255, 255, 0.15); 
+                border-radius: 3px;
+                min-width: 40px;
+            }
+            QScrollBar::handle:horizontal:hover { 
+                background: rgba(255, 255, 255, 0.25); 
+            }
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }
+            QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: none; }
         """)
         
         cards_layout = QHBoxLayout(container)
@@ -402,71 +415,92 @@ class GameApp(QWidget):
         return section
 
     def create_game_card(self, game_name, game_id):
-        """Cria card de jogo para a home"""
+        """Cria card de jogo moderno e minimalista"""
         card = QFrame()
-        card.setFixedSize(180, 275)
+        card.setFixedSize(185, 280)
         card.setCursor(Qt.PointingHandCursor)
         card.setStyleSheet("""
-            QFrame { background: #232323; border-radius: 12px; border: 2px solid transparent; }
-            QFrame:hover { background: #2a2a2a; }
+            QFrame {
+                background: #1E1E1E;
+                border-radius: 16px;
+            }
+            QFrame:hover {
+                background: #252525;
+            }
         """)
 
         layout = QVBoxLayout(card)
-        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setContentsMargins(10, 10, 10, 12)
         layout.setSpacing(0)
 
-        image = QLabel()
-        image.setFixedSize(164, 200)
+        # Container da imagem
+        image_container = QFrame()
+        image_container.setFixedSize(165, 205)
+        image_container.setStyleSheet("""
+            QFrame {
+                background: qlineargradient(
+                    x1:0, y1:0, x2:0, y2:1,
+                    stop:0 #1a2518,
+                    stop:1 #0f1a0d
+                );
+                border-radius: 12px;
+            }
+        """)
+        
+        image = QLabel(image_container)
+        image.setFixedSize(165, 205)
         image.setAlignment(Qt.AlignCenter)
-        image.setStyleSheet("QLabel { background: #181d14; border-radius: 8px; }")
+        image.setStyleSheet("QLabel { background: transparent; border-radius: 12px; }")
         self.load_game_poster(image, game_id)
 
-        font = QFont("Arial", 10, QFont.Bold)
+        font = QFont("Segoe UI", 10, QFont.DemiBold)
         name = QLabel()
         name.setFont(font)
         
-        if len(game_name) > 20:
+        if len(game_name) > 22:
             name.setText(game_name)
             name.setWordWrap(True)
             name.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
-            name.setMinimumHeight(38)
-            name.setMaximumHeight(55)
+            name.setMinimumHeight(40)
+            name.setMaximumHeight(52)
         else:
             metrics = QFontMetrics(font)
-            elided = metrics.elidedText(game_name, Qt.ElideRight, 164)
+            elided = metrics.elidedText(game_name, Qt.ElideRight, 155)
             name.setText(elided)
             name.setAlignment(Qt.AlignCenter)
-            name.setFixedHeight(38)
+            name.setFixedHeight(40)
         
-        name.setStyleSheet("QLabel { color: white; padding: 8px 4px 4px 4px; background: transparent; }")
+        name.setStyleSheet("QLabel { color: white; padding: 10px 4px 0px 4px; background: transparent; }")
 
-        layout.addWidget(image)
-        layout.addSpacing(3)
+        layout.addWidget(image_container)
         layout.addWidget(name)
 
         card.mousePressEvent = lambda event: self.on_game_card_clicked(game_id, game_name)
         return card
 
     def load_game_poster(self, label, app_id):
-        """Carrega poster do jogo com cache"""
-        label.setText("🎮")
-        label.setStyleSheet(label.styleSheet() + " font-size: 48px; color: #47D64E;")
+        """Carrega poster do jogo com cache - otimizado"""
+        # Placeholder minimalista
+        label.setStyleSheet("QLabel { background: #1a2518; border-radius: 12px; }")
         
-        cache_key = f"game_poster_{app_id}"
+        cache_key = f"poster_{app_id}"
+        
+        # URLs em ordem de preferencia (header eh menor e mais rapido)
         urls = [
-            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
             f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/header.jpg",
+            f"https://cdn.cloudflare.steamstatic.com/steam/apps/{app_id}/library_600x900.jpg",
         ]
         
         def on_success(pixmap):
             try:
-                if label and not label.isHidden() and not pixmap.isNull():
-                    scaled = pixmap.scaled(164, 200, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+                if label and not pixmap.isNull():
+                    scaled = pixmap.scaled(164, 200, Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
                     label.setPixmap(scaled)
+                    label.setStyleSheet("QLabel { background: transparent; border-radius: 12px; }")
             except:
                 pass
         
-        loader = ImageLoader(urls, cache_key=cache_key, max_size=(200, 250), parent_cache=self.image_cache)
+        loader = ImageLoader(urls, cache_key=cache_key, max_size=(180, 220), parent_cache=self.image_cache)
         loader.signals.finished.connect(on_success)
         loader.signals.error.connect(lambda: None)
         self.thread_pool.start(loader)
@@ -500,31 +534,69 @@ class GameApp(QWidget):
         self.thread_pool.start(worker)
 
     def create_loading_dialog(self, game_name):
-        """Dialog de loading"""
+        """Dialog de loading moderno e minimalista"""
         dialog = QDialog(self)
         dialog.setWindowFlags(Qt.FramelessWindowHint | Qt.Dialog)
-        dialog.setFixedSize(400, 200)
-        dialog.setStyleSheet("QDialog { background: #1a1a1a; border-radius: 12px; }")
+        dialog.setFixedSize(320, 140)
+        dialog.setStyleSheet("QDialog { background: #121212; border-radius: 12px; }")
         
         layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(30, 25, 30, 25)
+        layout.setSpacing(16)
         layout.setAlignment(Qt.AlignCenter)
         
-        title = QLabel(f"Carregando {game_name}...")
-        title.setFont(QFont("Arial", 14, QFont.Bold))
-        title.setStyleSheet("color: white;")
+        # Indicador de loading (pontos animados)
+        self._loading_dots = 0
+        indicator = QLabel()
+        indicator.setFixedHeight(8)
+        indicator.setStyleSheet("background: transparent;")
+        indicator.setAlignment(Qt.AlignCenter)
+        
+        # Container para os 3 pontos
+        dots_container = QWidget()
+        dots_layout = QHBoxLayout(dots_container)
+        dots_layout.setContentsMargins(0, 0, 0, 0)
+        dots_layout.setSpacing(8)
+        dots_layout.setAlignment(Qt.AlignCenter)
+        
+        self._dot_labels = []
+        for i in range(3):
+            dot = QLabel()
+            dot.setFixedSize(8, 8)
+            dot.setStyleSheet("background: #333333; border-radius: 4px;")
+            dots_layout.addWidget(dot)
+            self._dot_labels.append(dot)
+        
+        # Titulo
+        title = QLabel("Carregando...")
+        title.setFont(QFont("", 12))
+        title.setStyleSheet("color: #888888;")
         title.setAlignment(Qt.AlignCenter)
         
-        spinner = QLabel("⏳")
-        spinner.setFont(QFont("Arial", 48))
-        spinner.setAlignment(Qt.AlignCenter)
-        spinner.setStyleSheet("color: #47D64E;")
+        # Subtitulo com nome do jogo
+        if len(game_name) > 35:
+            game_name = game_name[:32] + "..."
+        subtitle = QLabel(game_name)
+        subtitle.setFont(QFont("", 10))
+        subtitle.setStyleSheet("color: #555555;")
+        subtitle.setAlignment(Qt.AlignCenter)
+        
+        layout.addWidget(dots_container)
+        layout.addWidget(title)
+        layout.addWidget(subtitle)
+        
+        # Animacao dos pontos
+        def animate_dots():
+            self._loading_dots = (self._loading_dots + 1) % 3
+            for i, dot in enumerate(self._dot_labels):
+                if i == self._loading_dots:
+                    dot.setStyleSheet("background: #47D64E; border-radius: 4px;")
+                else:
+                    dot.setStyleSheet("background: #333333; border-radius: 4px;")
         
         timer = QTimer(dialog)
-        timer.timeout.connect(lambda: spinner.setText("⌛" if spinner.text() == "⏳" else "⏳"))
-        timer.start(500)
-        
-        layout.addWidget(spinner)
-        layout.addWidget(title)
+        timer.timeout.connect(animate_dots)
+        timer.start(300)
         
         return dialog
 
@@ -539,12 +611,10 @@ class GameApp(QWidget):
         
         if len(text) >= 3:
             self.search_timer.start()
-            self.hero_banner.setVisible(False)
             self.games_scroll_area.setVisible(False)
             self.search_results_main_container.setVisible(True)
         else:
             self.search_timer.stop()
-            self.hero_banner.setVisible(True)
             self.games_scroll_area.setVisible(True)
             self.search_results_main_container.setVisible(False)
 
@@ -611,7 +681,6 @@ class GameApp(QWidget):
     def clear_search(self):
         """Limpa busca"""
         self.search_input.clear()
-        self.hero_banner.setVisible(True)
         self.games_scroll_area.setVisible(True)
         self.search_results_main_container.setVisible(False)
 
@@ -663,29 +732,31 @@ class GameApp(QWidget):
         
         header = QFrame()
         header.setFixedHeight(80)
-        header.setStyleSheet("""
-            QFrame { background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                stop:0 rgba(26, 26, 26, 255), stop:1 rgba(26, 26, 26, 0)); }
-        """)
+        header.setStyleSheet("QFrame { background: transparent; }")
         
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(30, 20, 30, 20)
         
-        title = QLabel("🎮 Meus Jogos Instalados")
-        title.setFont(QFont("Arial", 20, QFont.Bold))
+        title = QLabel("Meus Jogos Instalados")
+        title.setFont(QFont("", 20))
         title.setStyleSheet("color: white;")
         
         self.installed_count_label = QLabel("0 jogos instalados")
-        self.installed_count_label.setFont(QFont("Arial", 12))
-        self.installed_count_label.setStyleSheet("color: rgba(255, 255, 255, 0.6);")
+        self.installed_count_label.setFont(QFont("", 11))
+        self.installed_count_label.setStyleSheet("color: rgba(255, 255, 255, 0.5);")
         
-        btn_manual = QPushButton("📥 Instalar Manualmente")
-        btn_manual.setFixedSize(200, 45)
+        btn_manual = QPushButton("Instalar Manualmente")
+        btn_manual.setFixedSize(180, 42)
         btn_manual.setCursor(Qt.PointingHandCursor)
+        btn_manual.setFont(QFont("", 11))
         btn_manual.setStyleSheet("""
-            QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #47D64E, stop:1 #5ce36c);
-                color: #1F1F1F; border: none; border-radius: 22px; font-size: 14px; font-weight: bold; }
-            QPushButton:hover { background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5ce36c, stop:1 #6ff57d); }
+            QPushButton { 
+                background: #47D64E;
+                color: #0D0D0D; 
+                border: none; 
+                border-radius: 8px;
+            }
+            QPushButton:hover { background: #5CE36C; }
         """)
         btn_manual.clicked.connect(self.open_manual_install_dialog)
         
@@ -702,8 +773,21 @@ class GameApp(QWidget):
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
             QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical { width: 8px; background: #1a1a1a; }
-            QScrollBar::handle:vertical { background: #47D64E; border-radius: 4px; }
+            QScrollBar:vertical { 
+                width: 6px; 
+                background: transparent;
+                margin: 0;
+            }
+            QScrollBar::handle:vertical { 
+                background: rgba(255, 255, 255, 0.15); 
+                border-radius: 3px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover { 
+                background: rgba(255, 255, 255, 0.25); 
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
         """)
         
         container_wrapper = QWidget()
@@ -735,6 +819,291 @@ class GameApp(QWidget):
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
         self.tela_dlcs.setLayout(layout)
+    
+    def setup_configuracoes(self):
+        """Setup da página de Configurações"""
+        layout = QVBoxLayout(self.tela_configuracoes)
+        layout.setContentsMargins(40, 40, 40, 40)
+        layout.setSpacing(0)
+        
+        # Header
+        title = QLabel("Configuracoes")
+        title.setFont(QFont("", 22))
+        title.setStyleSheet("color: white;")
+        layout.addWidget(title)
+        
+        layout.addSpacing(8)
+        
+        subtitle = QLabel("Gerencie as configuracoes do aplicativo")
+        subtitle.setFont(QFont("", 11))
+        subtitle.setStyleSheet("color: #666666;")
+        layout.addWidget(subtitle)
+        
+        layout.addSpacing(40)
+        
+        # Secao DF-Tools
+        section_title = QLabel("DF-Tools")
+        section_title.setFont(QFont("", 13))
+        section_title.setStyleSheet("color: #47D64E;")
+        layout.addWidget(section_title)
+        
+        layout.addSpacing(12)
+        
+        desc = QLabel("Arquivos necessarios para o funcionamento dos jogos")
+        desc.setFont(QFont("", 10))
+        desc.setStyleSheet("color: #555555;")
+        layout.addWidget(desc)
+        
+        layout.addSpacing(24)
+        
+        # Status items
+        self.status_hid = self.create_status_row("hid.dll")
+        layout.addWidget(self.status_hid)
+        
+        layout.addSpacing(12)
+        
+        self.status_cef = self.create_status_row(".cef-dev-tools-size.vdf")
+        layout.addWidget(self.status_cef)
+        
+        layout.addSpacing(32)
+        
+        # Botoes
+        btn_container = QWidget()
+        btn_layout = QHBoxLayout(btn_container)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(16)
+        
+        self.btn_verificar = QPushButton("Verificar")
+        self.btn_verificar.setFixedHeight(42)
+        self.btn_verificar.setMinimumWidth(130)
+        self.btn_verificar.setCursor(Qt.PointingHandCursor)
+        self.btn_verificar.setFont(QFont("", 11))
+        self.btn_verificar.setStyleSheet("""
+            QPushButton {
+                background: transparent;
+                color: #888888;
+                border: 1px solid #333333;
+                border-radius: 6px;
+                padding: 0 20px;
+            }
+            QPushButton:hover { 
+                border-color: #555555;
+                color: white;
+            }
+        """)
+        self.btn_verificar.clicked.connect(self.verificar_dftools)
+        
+        self.btn_instalar_dftools = QPushButton("Instalar Arquivos")
+        self.btn_instalar_dftools.setFixedHeight(42)
+        self.btn_instalar_dftools.setMinimumWidth(150)
+        self.btn_instalar_dftools.setCursor(Qt.PointingHandCursor)
+        self.btn_instalar_dftools.setFont(QFont("", 11))
+        self.btn_instalar_dftools.setStyleSheet("""
+            QPushButton {
+                background: #47D64E;
+                color: #0D0D0D;
+                border: none;
+                border-radius: 6px;
+                padding: 0 20px;
+            }
+            QPushButton:hover { background: #5CE36C; }
+        """)
+        self.btn_instalar_dftools.clicked.connect(self.instalar_dftools)
+        
+        btn_layout.addWidget(self.btn_verificar)
+        btn_layout.addWidget(self.btn_instalar_dftools)
+        btn_layout.addStretch()
+        
+        layout.addWidget(btn_container)
+        layout.addStretch()
+        
+        # Verificar status inicial
+        QTimer.singleShot(500, self.verificar_dftools)
+    
+    def create_status_row(self, filename):
+        """Cria linha de status para arquivo"""
+        container = QWidget()
+        container.setFixedHeight(36)
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(12)
+        
+        # Indicador
+        indicator = QLabel()
+        indicator.setFixedSize(8, 8)
+        indicator.setStyleSheet("background: #333333; border-radius: 4px;")
+        indicator.setObjectName("indicator")
+        
+        # Nome do arquivo
+        name = QLabel(filename)
+        name.setFont(QFont("", 10))
+        name.setStyleSheet("color: #888888;")
+        name.setObjectName("name")
+        
+        # Status
+        status = QLabel("Verificando...")
+        status.setFont(QFont("", 10))
+        status.setStyleSheet("color: #555555;")
+        status.setAlignment(Qt.AlignRight)
+        status.setObjectName("status")
+        
+        layout.addWidget(indicator)
+        layout.addWidget(name)
+        layout.addStretch()
+        layout.addWidget(status)
+        
+        return container
+    
+    def create_status_item(self, name, installed):
+        """Cria item de status para verificacao"""
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(10)
+        
+        # Icone de status
+        icon = QLabel()
+        icon.setFixedSize(20, 20)
+        icon.setAlignment(Qt.AlignCenter)
+        icon.setObjectName(f"icon_{name.replace('.', '_')}")
+        
+        # Nome do arquivo
+        label = QLabel(name)
+        label.setFont(QFont("", 10))
+        label.setStyleSheet("color: #AAAAAA;")
+        label.setObjectName(f"label_{name.replace('.', '_')}")
+        
+        # Status text
+        status = QLabel("Verificando...")
+        status.setFont(QFont("", 10))
+        status.setStyleSheet("color: #888888;")
+        status.setObjectName(f"status_{name.replace('.', '_')}")
+        
+        layout.addWidget(icon)
+        layout.addWidget(label)
+        layout.addStretch()
+        layout.addWidget(status)
+        
+        return container
+    
+    def update_status_item(self, container, installed):
+        """Atualiza visual do item de status"""
+        indicator = container.findChild(QLabel, "indicator")
+        status = container.findChild(QLabel, "status")
+        name_label = container.findChild(QLabel, "name")
+        
+        if installed:
+            indicator.setStyleSheet("background: #47D64E; border-radius: 4px;")
+            status.setText("Instalado")
+            status.setStyleSheet("color: #47D64E;")
+            name_label.setStyleSheet("color: white;")
+        else:
+            indicator.setStyleSheet("background: #FF4444; border-radius: 4px;")
+            status.setText("Nao encontrado")
+            status.setStyleSheet("color: #FF4444;")
+            name_label.setStyleSheet("color: #888888;")
+    
+    def verificar_dftools(self):
+        """Verifica se os arquivos DF-Tools estao instalados"""
+        # Mostrar loading
+        self.set_status_loading(self.status_hid)
+        self.set_status_loading(self.status_cef)
+        
+        # Delay para simular loading e permitir UI atualizar
+        QTimer.singleShot(500, self._verificar_dftools_real)
+    
+    def _verificar_dftools_real(self):
+        """Executa a verificacao real"""
+        if not self.steam_path:
+            log_message("[DFTOOLS] Steam path nao encontrado")
+            self.update_status_item(self.status_hid, False)
+            self.update_status_item(self.status_cef, False)
+            return
+        
+        steam_dir = Path(self.steam_path)
+        
+        # Verificar hid.dll
+        hid_path = steam_dir / "hid.dll"
+        hid_installed = hid_path.exists()
+        self.update_status_item(self.status_hid, hid_installed)
+        
+        # Verificar .cef-dev-tools-size.vdf
+        cef_path = steam_dir / ".cef-dev-tools-size.vdf"
+        cef_installed = cef_path.exists()
+        self.update_status_item(self.status_cef, cef_installed)
+        
+        log_message(f"[DFTOOLS] Verificacao: hid.dll={hid_installed}, cef={cef_installed}")
+    
+    def set_status_loading(self, container):
+        """Define status como loading"""
+        indicator = container.findChild(QLabel, "indicator")
+        status = container.findChild(QLabel, "status")
+        name_label = container.findChild(QLabel, "name")
+        
+        indicator.setStyleSheet("background: #555555; border-radius: 4px;")
+        status.setText("Verificando...")
+        status.setStyleSheet("color: #555555;")
+        name_label.setStyleSheet("color: #666666;")
+    
+    def instalar_dftools(self):
+        """Instala os arquivos DF-Tools na pasta da Steam"""
+        if not self.steam_path:
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Erro", "Pasta da Steam nao encontrada!")
+            return
+        
+        steam_dir = Path(self.steam_path)
+        config_dir = Path("config")
+        assets_config_dir = Path("assets/config")
+        
+        try:
+            import shutil
+            
+            # Copiar hid.dll
+            hid_source = config_dir / "hid.dll"
+            hid_dest = steam_dir / "hid.dll"
+            
+            if hid_source.exists():
+                shutil.copy2(hid_source, hid_dest)
+                log_message(f"[DFTOOLS] hid.dll copiado para {hid_dest}")
+            
+            # Copiar .cef-dev-tools-size.vdf
+            cef_source = assets_config_dir / ".cef-dev-tools-size.vdf"
+            cef_dest = steam_dir / ".cef-dev-tools-size.vdf"
+            
+            if cef_source.exists():
+                shutil.copy2(cef_source, cef_dest)
+                log_message(f"[DFTOOLS] .cef-dev-tools-size.vdf copiado para {cef_dest}")
+            
+            # Verificar novamente
+            self.verificar_dftools()
+            
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.information(self, "Sucesso", "Arquivos DF-Tools instalados com sucesso!")
+            
+        except PermissionError as e:
+            log_message(f"[DFTOOLS] Erro de permissao: {e}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.warning(self, "Steam em uso", 
+                "Nao foi possivel instalar os arquivos.\n\n"
+                "Feche a Steam completamente e tente novamente.")
+                
+        except OSError as e:
+            if e.winerror == 32:  # Arquivo em uso
+                log_message(f"[DFTOOLS] Arquivo em uso: {e}")
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.warning(self, "Steam em uso", 
+                    "Nao foi possivel instalar os arquivos.\n\n"
+                    "Feche a Steam completamente e tente novamente.")
+            else:
+                log_message(f"[DFTOOLS] Erro OS: {e}")
+                from PyQt5.QtWidgets import QMessageBox
+                QMessageBox.critical(self, "Erro", f"Erro ao instalar arquivos:\n{e}")
+            
+        except Exception as e:
+            log_message(f"[DFTOOLS] Erro ao instalar: {e}")
+            from PyQt5.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Erro", f"Erro ao instalar arquivos:\n{e}")
 
     def load_games_from_api(self):
         """Carrega jogos da API"""
@@ -745,8 +1114,15 @@ class GameApp(QWidget):
             if data.get('status') == 'success':
                 jogos = data.get('jogos', [])
                 if jogos:
-                    random.shuffle(jogos)
-                    self.populate_game_section(self.all_games_container, jogos)
+                    # Todos os jogos - ordem aleatoria
+                    jogos_all = jogos.copy()
+                    random.shuffle(jogos_all)
+                    self.populate_game_section(self.all_games_container, jogos_all)
+                    
+                    # Jogos populares - outra ordem aleatoria
+                    jogos_popular = jogos.copy()
+                    random.shuffle(jogos_popular)
+                    self.populate_game_section(self.popular_games_container, jogos_popular)
         except Exception as e:
             log_message(f"Erro ao carregar jogos: {e}")
 
@@ -803,12 +1179,15 @@ class GameApp(QWidget):
 
     def create_installed_game_card(self, game_name, game_info):
         """Cria card de jogo instalado"""
+        # Limpar caracteres especiais do nome
+        clean_name = self.clean_game_name(game_name)
+        
         card = QFrame()
         card.setFixedSize(200, 270)
         card.setCursor(Qt.PointingHandCursor)
         card.setStyleSheet("""
-            QFrame { background: #232323; border-radius: 14px; border: 2px solid transparent; }
-            QFrame:hover { background: #2a2a2a; }
+            QFrame { background: #1E1E1E; border-radius: 14px; }
+            QFrame:hover { background: #252525; }
         """)
         
         layout = QVBoxLayout(card)
@@ -822,27 +1201,30 @@ class GameApp(QWidget):
         game_id = game_info.get('id', '')
         self.load_game_poster(poster, game_id)
         
-        badge = QLabel("✔ Instalado", poster)
-        badge.setFont(QFont("Segoe UI", 9, QFont.Bold))
+        badge = QLabel("Instalado", poster)
+        badge.setFont(QFont("", 9))
         badge.setStyleSheet("""
-            QLabel { background-color: rgba(46, 204, 113, 0.95); color: #0f2414;
-                border-radius: 8px; padding: 4px 10px; }
+            QLabel { 
+                background-color: rgba(71, 214, 78, 0.9); 
+                color: #0D0D0D;
+                border-radius: 6px; 
+                padding: 4px 10px;
+            }
         """)
         badge.move(8, 8)
         
-        font = QFont("Arial", 11, QFont.Bold)
         name = QLabel()
-        name.setFont(font)
+        name.setFont(QFont("", 10))
         
-        if len(game_name) > 25:
-            name.setText(game_name)
+        if len(clean_name) > 25:
+            name.setText(clean_name)
             name.setWordWrap(True)
             name.setAlignment(Qt.AlignCenter | Qt.AlignVCenter)
             name.setMinimumHeight(40)
             name.setMaximumHeight(60)
         else:
-            metrics = QFontMetrics(font)
-            elided = metrics.elidedText(game_name, Qt.ElideRight, 180)
+            metrics = QFontMetrics(QFont("", 10))
+            elided = metrics.elidedText(clean_name, Qt.ElideRight, 180)
             name.setText(elided)
             name.setAlignment(Qt.AlignCenter)
             name.setFixedHeight(40)
@@ -855,6 +1237,29 @@ class GameApp(QWidget):
 
         card.mousePressEvent = lambda event: self.open_installed_game_modal(game_name, game_info)
         return card
+    
+    def clean_game_name(self, name):
+        """Limpa caracteres especiais do nome do jogo"""
+        # Remover caracteres problemáticos de encoding
+        replacements = {
+            'â„¢': '',
+            'Â®': '',
+            'â€™': "'",
+            'â€"': '-',
+            'â€œ': '"',
+            'â€': '"',
+            'Ã©': 'e',
+            'Ã ': 'a',
+            'Ã¡': 'a',
+            'Ã£': 'a',
+            'Ã§': 'c',
+            'Ãº': 'u',
+            'Ã³': 'o',
+            'Ã­': 'i',
+        }
+        for old, new in replacements.items():
+            name = name.replace(old, new)
+        return name.strip()
 
     def show_no_games_installed(self):
         """Mostra estado vazio"""

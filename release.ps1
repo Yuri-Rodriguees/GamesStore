@@ -10,7 +10,7 @@ param(
 
 $tag = "v$Version"
 $backupDir = "backup"
-$requiredFiles = @("uxmod.py", "xcore.py", "datax.py")
+$requiredFiles = @("uxmod.py", "xcore.py", "datax.py", "updater.py", "ui_components.py", "utils.py", "main.py", "rc.py")
 $requiredDirs = @("core")
 
 Write-Host ""

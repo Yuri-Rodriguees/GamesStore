@@ -42,26 +42,39 @@ class GameDetailsScreen(QWidget):
         layout.addWidget(self.main_container)
     
     def setup_screen_content(self, layout):
-        """Monta o conteúdo da tela"""
+        """Monta o conteúdo da tela com design moderno"""
         details = self.details
         game_id = self.game_id
         
-        # Header
+        # Header com imagem de fundo e overlay
         header = QFrame()
-        header.setFixedHeight(300)
-        header.setStyleSheet("""
-            QFrame {
-                background: #2a2a2a;
-            }
-        """)
+        header.setFixedHeight(320)
+        header.setStyleSheet("background: #121212;")
         
         header_layout = QVBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
         
+        # Container da imagem
+        image_container = QWidget()
+        image_layout = QVBoxLayout(image_container)
+        image_layout.setContentsMargins(0, 0, 0, 0)
+        
+        # Imagem do header
         header_image = QLabel()
-        header_image.setFixedSize(1200, 300)
         header_image.setAlignment(Qt.AlignCenter)
         header_image.setStyleSheet("background: #1a1a1a;")
+        header_image.setScaledContents(True)
+        
+        # Overlay gradiente
+        overlay = QLabel(header_image)
+        overlay.setStyleSheet("""
+            background: qlineargradient(
+                x1:0, y1:0, x2:0, y2:1,
+                stop:0 rgba(18, 18, 18, 0.3),
+                stop:0.5 transparent,
+                stop:1 #121212
+            );
+        """)
         
         if details.get('background') or details.get('header_image'):
             bg_url = details.get('background') or details.get('header_image')
@@ -69,53 +82,42 @@ class GameDetailsScreen(QWidget):
             loader = ImageLoader(
                 bg_url,
                 cache_key=cache_key,
-                max_size=(1250, 350),
+                max_size=(1200, 350),
                 parent_cache=self.parent_app.image_cache
             )
             def on_header_loaded(pixmap):
                 try:
                     if header_image and not pixmap.isNull():
-                        scaled = pixmap.scaled(
-                            1200, 300,
-                            Qt.KeepAspectRatioByExpanding,
-                            Qt.SmoothTransformation
-                        )
-                        header_image.setPixmap(scaled)
-                except (RuntimeError, AttributeError):
+                        header_image.setPixmap(pixmap)
+                        overlay.resize(header_image.size())
+                except:
                     pass
             
             loader.signals.finished.connect(on_header_loaded)
             loader.signals.error.connect(lambda: None)
             self.parent_app.thread_pool.start(loader)
         
-        header_layout.addWidget(header_image)
+        image_layout.addWidget(header_image)
+        header_layout.addWidget(image_container)
         
-        overlay = QLabel(header)
-        overlay.setGeometry(0, 0, 1200, 300)
-        overlay.setStyleSheet("""
-            background: qlineargradient(
-                x1:0, y1:0, x2:0, y2:1,
-                stop:0 transparent,
-                stop:1 rgba(26, 26, 26, 0.9)
-            );
-        """)
-        
-        # Botão voltar
+        # Botão voltar flutuante
         back_btn = QPushButton("← Voltar", header)
-        back_btn.setFixedSize(100, 40)
-        back_btn.move(20, 10)
+        back_btn.setFixedSize(100, 36)
+        back_btn.move(20, 20)
         back_btn.setCursor(Qt.PointingHandCursor)
         back_btn.setStyleSheet("""
             QPushButton {
-                background: rgba(0, 0, 0, 0.7);
+                background: rgba(0, 0, 0, 0.6);
                 color: white;
-                border: none;
-                border-radius: 20px;
-                font-size: 14px;
-                font-weight: bold;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 18px;
+                font-size: 13px;
+                font-weight: 600;
             }
             QPushButton:hover {
-                background: rgba(71, 214, 78, 0.8);
+                background: rgba(71, 214, 78, 0.9);
+                border-color: #47D64E;
+                color: #121212;
             }
         """)
         back_btn.clicked.connect(lambda: self.parent_app.pages.setCurrentIndex(1))
@@ -127,174 +129,172 @@ class GameDetailsScreen(QWidget):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         scroll.setStyleSheet("""
-            QScrollArea {
-                background: transparent;
-                border: none;
-            }
-            QScrollBar:vertical {
-                width: 8px;
-                background: #1a1a1a;
-            }
-            QScrollBar::handle:vertical {
-                background: #47D64E;
-                border-radius: 4px;
-            }
+            QScrollArea { background: transparent; border: none; }
+            QScrollBar:vertical { width: 8px; background: #1a1a1a; }
+            QScrollBar::handle:vertical { background: #333; border-radius: 4px; }
+            QScrollBar::handle:vertical:hover { background: #47D64E; }
         """)
         
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(30, 20, 30, 20)
-        content_layout.setSpacing(15)
+        content_layout.setContentsMargins(40, 0, 40, 40)
+        content_layout.setSpacing(25)
         
-        # Título
+        # Título e Status
+        top_info = QHBoxLayout()
+        
         title = QLabel(details.get('nome', 'Jogo'))
-        title.setFont(QFont("Arial", 24, QFont.Bold))
+        title.setFont(QFont("Arial", 32, QFont.Bold))
         title.setStyleSheet("color: white;")
         title.setWordWrap(True)
         
-        # Info horizontal
-        info_layout = QHBoxLayout()
-        
-        id_label = QLabel(f"🎮 Steam ID: {game_id}")
-        id_label.setStyleSheet("color: rgba(255, 255, 255, 0.6); font-size: 12px;")
-        
         disponivel = details.get('disponivel_download', False)
-        tem_chaves = details.get('tem_chaves', False)
-        qtd_chaves = details.get('quantidade_chaves', 0)
         
-        if disponivel:
-            avail_label = QLabel("✔️ Disponível para Download")
-            avail_label.setStyleSheet("color: #47D64E; font-size: 13px; font-weight: bold;")
-            # Informativo sobre chaves (opcional)
-            if tem_chaves and qtd_chaves > 0:
-                keys_label = QLabel(f"Chaves extras: {qtd_chaves}")
-                keys_label.setStyleSheet("font-size: 11px; color: #bbbbbb; margin-left:12px;")
-                info_layout.addWidget(keys_label)
-        else:
-            avail_label = QLabel("❌ Não disponível")
-            avail_label.setStyleSheet("color: #ff4444; font-size: 13px; font-weight: bold;")
-
-        info_layout.addWidget(id_label)
-        info_layout.addWidget(avail_label)
-        info_layout.addStretch()
+        status_text = "DISPONÍVEL" if disponivel else "INDISPONÍVEL"
+        status_color = "#47D64E" if disponivel else "#ff4444"
+        status_bg = "rgba(71, 214, 78, 0.15)" if disponivel else "rgba(255, 68, 68, 0.15)"
         
-        # Descrição
-        desc = QLabel(details.get('descricao', 'Sem descrição'))
-        desc.setWordWrap(True)
-        desc.setStyleSheet("color: rgba(255, 255, 255, 0.8); font-size: 13px;")
-        
-        # Informações extras
-        info_grid = QVBoxLayout()
-        info_grid.setSpacing(8)
-        
-        if details.get('generos'):
-            generos = ', '.join(details['generos']) if isinstance(details['generos'], list) else details['generos']
-            genres_label = QLabel(f"📂 Gêneros: {generos}")
-            genres_label.setStyleSheet("color: white; font-size: 12px;")
-            info_grid.addWidget(genres_label)
-        
-        if details.get('desenvolvedores'):
-            devs = ', '.join(details['desenvolvedores']) if isinstance(details['desenvolvedores'], list) else details['desenvolvedores']
-            dev_label = QLabel(f"👨‍💻 Desenvolvedores: {devs}")
-            dev_label.setStyleSheet("color: white; font-size: 12px;")
-            info_grid.addWidget(dev_label)
-        
-        if details.get('data_lancamento'):
-            release_label = QLabel(f"📅 Lançamento: {details['data_lancamento']}")
-            release_label.setStyleSheet("color: white; font-size: 12px;")
-            info_grid.addWidget(release_label)
-        
-        content_layout.addWidget(title)
-        content_layout.addLayout(info_layout)
-        content_layout.addWidget(desc)
-        content_layout.addSpacing(10)
-        content_layout.addLayout(info_grid)
-        content_layout.addStretch()
-        
-        scroll.setWidget(content)
-        layout.addWidget(scroll, 1)
-        
-        # Footer com botões
-        footer = QFrame()
-        footer.setFixedHeight(90)
-        footer.setStyleSheet("""
-            QFrame {
-                background: qlineargradient(
-                    x1:0, y1:0, x2:0, y2:1,
-                    stop:0 transparent,
-                    stop:1 rgba(26, 26, 26, 0.95)
-                );
-                border-bottom-left-radius: 12px;
-                border-bottom-right-radius: 12px;
-            }
+        status_badge = QLabel(f" {status_text} ")
+        status_badge.setFixedHeight(24)
+        status_badge.setStyleSheet(f"""
+            background: {status_bg};
+            color: {status_color};
+            border: 1px solid {status_color}40;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            padding: 0 8px;
         """)
         
-        footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(30, 15, 30, 15)
-        footer_layout.setSpacing(15)
+        top_info.addWidget(title)
+        top_info.addSpacing(15)
+        top_info.addWidget(status_badge)
+        top_info.addStretch()
         
-        # Botão download
-        download_btn = QPushButton("⬇️ Baixar Agora")
-        download_btn.setFixedHeight(55)
+        content_layout.addLayout(top_info)
+        
+        # Grid de Informações
+        info_grid = QHBoxLayout()
+        info_grid.setSpacing(40)
+        
+        def create_info_item(label, value, icon=""):
+            item = QWidget()
+            l = QVBoxLayout(item)
+            l.setContentsMargins(0, 0, 0, 0)
+            l.setSpacing(4)
+            
+            lbl = QLabel(label)
+            lbl.setStyleSheet("color: #666666; font-size: 12px; font-weight: 600;")
+            
+            val = QLabel(f"{icon} {value}" if icon else value)
+            val.setStyleSheet("color: #E0E0E0; font-size: 14px;")
+            val.setWordWrap(True)
+            
+            l.addWidget(lbl)
+            l.addWidget(val)
+            return item
+        
+        # Dados para o grid
+        release_date = details.get('data_lancamento', 'N/A')
+        devs = ', '.join(details['desenvolvedores']) if isinstance(details.get('desenvolvedores'), list) else details.get('desenvolvedores', 'N/A')
+        genres = ', '.join(details['generos']) if isinstance(details.get('generos'), list) else details.get('generos', 'N/A')
+        
+        # Limitar tamanho dos textos
+        if len(devs) > 30: devs = devs[:27] + "..."
+        if len(genres) > 30: genres = genres[:27] + "..."
+        
+        info_grid.addWidget(create_info_item("LANÇAMENTO", release_date, "📅"))
+        info_grid.addWidget(create_info_item("DESENVOLVEDOR", devs, "👨‍💻"))
+        info_grid.addWidget(create_info_item("GÊNEROS", genres, "📂"))
+        info_grid.addStretch()
+        
+        content_layout.addLayout(info_grid)
+        content_layout.addSpacing(10)
+        
+        # Descrição
+        desc_label = QLabel("SOBRE O JOGO")
+        desc_label.setStyleSheet("color: #666666; font-size: 12px; font-weight: 600; margin-bottom: 5px;")
+        content_layout.addWidget(desc_label)
+        
+        desc = QLabel(details.get('descricao', 'Sem descrição'))
+        desc.setWordWrap(True)
+        desc.setStyleSheet("color: #CCCCCC; font-size: 14px; line-height: 1.4;")
+        content_layout.addWidget(desc)
+        
+        content_layout.addSpacing(20)
+        
+        # Ações
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(15)
+        
+        # Botão Download
+        download_btn = QPushButton("BAIXAR AGORA")
+        download_btn.setFixedSize(200, 50)
         download_btn.setCursor(Qt.PointingHandCursor)
         
         if disponivel:
-            download_btn.setText("⬇️ Baixar Agora")
             download_btn.setEnabled(True)
             download_btn.setStyleSheet("""
                 QPushButton {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #47D64E, stop:1 #5ce36c);
-                    color: #1F1F1F;
+                    background: #47D64E;
+                    color: #121212;
                     border: none;
-                    border-radius: 10px;
-                    font-size: 16px;
+                    border-radius: 6px;
+                    font-size: 14px;
                     font-weight: bold;
-                    padding: 0 30px;
+                    letter-spacing: 0.5px;
                 }
                 QPushButton:hover {
-                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 #5ce36c, stop:1 #47D64E);
+                    background: #5ce36c;
+                }
+                QPushButton:pressed {
+                    background: #3eb845;
                 }
             """)
             download_btn.clicked.connect(lambda: self.parent_app.start_download_from_api(game_id, details.get('nome', 'Jogo')))
         else:
-            download_btn.setText("❌ Não Disponível")
+            download_btn.setText("INDISPONÍVEL")
             download_btn.setEnabled(False)
             download_btn.setStyleSheet("""
                 QPushButton {
-                    background: rgba(100, 100, 100, 0.3);
-                    color: rgba(255, 255, 255, 0.4);
-                    border: 2px solid rgba(255, 255, 255, 0.2);
-                    border-radius: 10px;
-                    font-size: 16px;
+                    background: rgba(255, 255, 255, 0.05);
+                    color: #666666;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 6px;
+                    font-size: 14px;
                     font-weight: bold;
-                    padding: 0 30px;
                 }
             """)
-        
+            
         # Botão Steam
-        steam_btn = QPushButton("🎮 Ver na Steam")
-        steam_btn.setFixedHeight(55)
+        steam_btn = QPushButton("Ver na Steam")
+        steam_btn.setFixedSize(140, 50)
         steam_btn.setCursor(Qt.PointingHandCursor)
         steam_btn.setStyleSheet("""
             QPushButton {
-                background: rgba(255, 255, 255, 0.1);
-                color: white;
-                border: 2px solid rgba(255, 255, 255, 0.3);
-                border-radius: 10px;
-                font-size: 15px;
-                font-weight: bold;
-                padding: 0 30px;
+                background: rgba(255, 255, 255, 0.05);
+                color: #888888;
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                border-radius: 6px;
+                font-size: 14px;
+                font-weight: 600;
             }
             QPushButton:hover {
-                background: rgba(255, 255, 255, 0.2);
-                border-color: #47D64E;
+                background: rgba(255, 255, 255, 0.1);
+                color: white;
+                border-color: rgba(255, 255, 255, 0.3);
             }
         """)
         steam_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(f"https://store.steampowered.com/app/{game_id}"))
         )
         
-        footer_layout.addWidget(download_btn, 2)
-        footer_layout.addWidget(steam_btn, 1)
+        actions_layout.addWidget(download_btn)
+        actions_layout.addWidget(steam_btn)
+        actions_layout.addStretch()
         
-        layout.addWidget(footer, 0)
+        content_layout.addLayout(actions_layout)
+        content_layout.addStretch()
+        
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)

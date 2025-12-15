@@ -276,7 +276,6 @@ class LoadingScreen(QWidget):
                 self.parent_window_to_close.close()
             self.close()
         except Exception as e:
-            print(f"ERRO CRÍTICO AO INICIAR SOFTWARE: {e}")
             if self.parent_window_to_close:
                 self.parent_window_to_close.show()
                 self.parent_window_to_close.login_error(f"Falha ao iniciar: {e}")

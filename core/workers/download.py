@@ -277,9 +277,7 @@ class DownloadWorker(QRunnable):
             
         except Exception as e:
             error_msg = f"Erro: {str(e)}"
-            log_message(f"[DOWNLOAD WORKER] ERRO durante download/instalação: {error_msg}", include_traceback=True)
-            import traceback
-            traceback.print_exc()
+            log_message(f"[DOWNLOAD WORKER] ERRO durante download/instalacao: {error_msg}", include_traceback=True, is_error=True)
             self.signals.error.emit(error_msg)
             log_message("[DOWNLOAD WORKER] Signal error.emit enviado")
             
@@ -452,5 +450,5 @@ class DownloadThread(QThread):
             
             self.download_complete.emit(True)
         except Exception as e:
-            print(f"Erro no download: {str(e)}")
+            log_message(f"[DOWNLOAD THREAD] Erro no download: {str(e)}", is_error=True)
             self.download_complete.emit(False)

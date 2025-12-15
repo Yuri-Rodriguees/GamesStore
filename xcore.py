@@ -37,13 +37,9 @@ from core.ui.screens.details import GameDetailsScreen
 from core.ui.screens.manual_install import ManualInstallScreen
 from core.ui.screens.installed_game import InstalledGameScreen
 
-# App principal
 from core.app import GameApp
 
-
-# ============================================================================
 # FUNÇÃO DE INICIALIZAÇÃO
-# ============================================================================
 
 def start_software():
     """
@@ -58,9 +54,7 @@ def start_software():
     return window
 
 
-# ============================================================================
 # EXPORTAÇÕES
-# ============================================================================
 
 __all__ = [
     # Utilitários
@@ -100,6 +94,5 @@ __all__ = [
     'start_software',
 ]
 
-
 if __name__ == "__main__":
-    print("❌ Acesso negado. Execute pelo login.")
+    pass

@@ -34,11 +34,10 @@ def check_for_beta_updates():
     log("=" * 60)
     
     if not is_frozen():
-        log("⚠️ Modo desenvolvimento - pulando verificação")
+        log("Modo desenvolvimento - pulando verificação")
         return False, None, None, None
     
     try:
-        # Buscar todas as releases (incluindo prereleases)
         api_url = f"https://api.github.com/repos/{GITHUB_REPO}/releases"
         log(f"Consultando: {api_url}")
         response = requests.get(api_url, timeout=10)
@@ -50,7 +49,6 @@ def check_for_beta_updates():
         releases = response.json()
         current_version = get_current_version()
         
-        # Procurar por releases beta mais recentes (ignorar -old)
         latest_beta = None
         latest_beta_version = None
         
@@ -60,11 +58,9 @@ def check_for_beta_updates():
             
             tag_name = release.get("tag_name", "").replace("v", "")
             
-            # Ignorar versões -old (são as versões antigas para teste)
             if "-old" in tag_name.lower():
                 continue
             
-            # Verificar se tem .exe
             has_exe = False
             download_url = None
             for asset in release.get("assets", []):
@@ -76,16 +72,13 @@ def check_for_beta_updates():
             if not has_exe:
                 continue
             
-            # Comparar versões
             try:
-                # Limpar versões usando função auxiliar
                 current_clean = clean_version(current_version)
                 latest_clean = clean_version(tag_name)
                 
                 current_parts = current_clean.split(".")
                 latest_parts = latest_clean.split(".")
                 
-                # Garantir que ambas têm 3 partes
                 while len(current_parts) < 3:
                     current_parts.append("0")
                 while len(latest_parts) < 3:
@@ -94,15 +87,12 @@ def check_for_beta_updates():
                 current_tuple = tuple(map(int, current_parts[:3]))
                 latest_tuple = tuple(map(int, latest_parts[:3]))
                 
-                # Se a versão beta é mais nova que a atual
                 if latest_tuple > current_tuple:
-                    # Comparar com a versão beta já encontrada (se houver)
                     if latest_beta is None:
                         latest_beta = release
                         latest_beta_version = tag_name
-                        log(f"✅ Versão beta encontrada: {tag_name}")
+                        log(f"Versão beta encontrada: {tag_name}")
                     else:
-                        # Comparar com a versão beta já encontrada
                         existing_clean = clean_version(latest_beta_version)
                         existing_parts = existing_clean.split(".")
                         while len(existing_parts) < 3:
@@ -112,17 +102,16 @@ def check_for_beta_updates():
                         if latest_tuple > existing_tuple:
                             latest_beta = release
                             latest_beta_version = tag_name
-                            log(f"✅ Versão beta mais recente encontrada: {tag_name}")
+                            log(f"Versão beta mais recente encontrada: {tag_name}")
             except (ValueError, IndexError) as e:
-                log(f"⚠️ Erro ao comparar versão {tag_name}: {e}")
+                log(f"Erro ao comparar versão {tag_name}: {e}")
                 continue
         
         if latest_beta is None:
-            log("ℹ️ Nenhuma atualização beta disponível")
+            log("Nenhuma atualização beta disponível")
             log("=" * 60)
             return False, None, None, None
         
-        # Buscar .exe na release beta mais recente
         download_url = None
         for asset in latest_beta.get("assets", []):
             if asset.get("name", "").endswith(".exe"):
@@ -134,19 +123,22 @@ def check_for_beta_updates():
             log("ERRO: Nenhum .exe encontrado na release beta")
             return False, None, None, None
         
-        log(f"✅ ATUALIZAÇÃO BETA DISPONÍVEL: {current_version} → {latest_beta_version}")
+        log(f"ATUALIZAÇÃO BETA DISPONÍVEL: {current_version} -> {latest_beta_version}")
         log("=" * 60)
         
         release_notes = latest_beta.get("body", "Melhorias gerais")
         return True, latest_beta_version, download_url, release_notes
         
+    except Exception as e:
+        log(f"ERRO: {e}")
+        return False, None, None, None
+
 def clean_version(version_str):
     """Remove prefixos e sufixos da versão, retornando apenas números"""
     if not version_str:
         return "0.0.0"
     
     try:
-        # Encontrar todos os grupos de números na string
         numbers = re.findall(r'\d+', str(version_str))
         
         if len(numbers) >= 3:
@@ -168,11 +160,10 @@ def check_for_updates():
     log("=" * 60)
     
     if not is_frozen():
-        log("⚠️ Modo desenvolvimento - pulando verificação")
+        log("Modo desenvolvimento - pulando verificação")
         return False, None, None, None
     
     try:
-        # A API /releases/latest AUTOMATICAMENTE ignora prereleases
         log(f"Consultando: {GITHUB_API_URL}")
         response = requests.get(GITHUB_API_URL, timeout=10)
         
@@ -182,15 +173,13 @@ def check_for_updates():
         
         data = response.json()
         
-        # Verificar se é prerelease (não deveria ser, mas por segurança)
         if data.get("prerelease", False):
-            log("⚠️ API retornou prerelease - ignorando")
+            log("API retornou prerelease - ignorando")
             return False, None, None, None
         
         latest_version = data.get("tag_name", "").replace("v", "")
         release_notes = data.get("body", "Melhorias gerais")
         
-        # Buscar .exe
         download_url = None
         for asset in data.get("assets", []):
             if asset.get("name", "").endswith(".exe"):
@@ -202,43 +191,29 @@ def check_for_updates():
             log("ERRO: Nenhum .exe encontrado")
             return False, None, None, None
         
-        # Comparar versões
         current_version = get_current_version()
         
         try:
-            # Limpar versões usando função auxiliar
             current_clean = clean_version(current_version)
             latest_clean = clean_version(latest_version)
             
-            log(f"Versão atual original: {current_version}")
-            log(f"Versão atual limpa: {current_clean}")
-            log(f"Versão latest original: {latest_version}")
-            log(f"Versão latest limpa: {latest_clean}")
+            log(f"Versão atual: {current_clean}")
+            log(f"Versão latest: {latest_clean}")
             
             current_parts = current_clean.split(".")
             latest_parts = latest_clean.split(".")
             
-            log(f"Partes da versão atual: {current_parts}")
-            log(f"Partes da versão latest: {latest_parts}")
-            
-            # Garantir que ambas têm 3 partes
             while len(current_parts) < 3:
                 current_parts.append("0")
             while len(latest_parts) < 3:
                 latest_parts.append("0")
             
-            log(f"Partes finais da versão atual: {current_parts[:3]}")
-            log(f"Partes finais da versão latest: {latest_parts[:3]}")
-            
-            # Validar que todas as partes são números antes de converter
             for i, part in enumerate(current_parts[:3]):
                 if not part.isdigit():
-                    log(f"ERRO: Parte {i} da versão atual não é número: '{part}'")
                     raise ValueError(f"Parte da versão não é número: '{part}'")
             
             for i, part in enumerate(latest_parts[:3]):
                 if not part.isdigit():
-                    log(f"ERRO: Parte {i} da versão latest não é número: '{part}'")
                     raise ValueError(f"Parte da versão não é número: '{part}'")
             
             current = tuple(map(int, current_parts[:3]))
@@ -247,23 +222,19 @@ def check_for_updates():
             has_update = latest > current
             
             if has_update:
-                log(f"✅ ATUALIZAÇÃO STABLE DISPONÍVEL: {current_version} → {latest_version}")
+                log(f"ATUALIZAÇÃO DISPONÍVEL: {current_version} -> {latest_version}")
             else:
-                log(f"ℹ️ JÁ ESTÁ ATUALIZADO")
+                log("JÁ ESTÁ ATUALIZADO")
             
             log("=" * 60)
             return has_update, latest_version, download_url, release_notes
             
         except (ValueError, IndexError) as e:
             log(f"ERRO ao comparar versões: {e}")
-            log(f"   Versão atual: {current_version} (limpa: {current_clean})")
-            log(f"   Versão latest: {latest_version} (limpa: {latest_clean})")
             return False, None, None, None
         
     except Exception as e:
         log(f"ERRO: {e}")
-        import traceback
-        log(f"Traceback: {traceback.format_exc()}")
         return False, None, None, None
 
 class UpdateDownloader(QThread):
@@ -334,7 +305,7 @@ class ModernUpdateDialog(QDialog):
         layout.setSpacing(15)
         layout.setContentsMargins(30, 30, 30, 30)
         
-        title = QLabel("🔄 Nova Atualização Disponível")
+        title = QLabel("Nova Atualização Disponível")
         title.setObjectName("title")
         title.setAlignment(Qt.AlignCenter)
         layout.addWidget(title)
@@ -408,9 +379,7 @@ def perform_update(parent, download_url):
     downloader.progress.connect(progress_dialog.update_progress)
     
     def on_download_finished(temp_file):
-        """Callback quando o download termina com sucesso"""
         try:
-            # Aguardar um pouco para garantir que o arquivo foi completamente salvo
             QTimer.singleShot(1500, lambda: install_update(temp_file, progress_dialog))
         except Exception as e:
             log(f"ERRO no callback de download: {e}")
@@ -418,7 +387,6 @@ def perform_update(parent, download_url):
             QMessageBox.critical(parent, "Erro", f"Erro ao processar download: {e}")
     
     def on_download_error(error_msg):
-        """Callback quando ocorre erro no download"""
         try:
             progress_dialog.close()
             QMessageBox.critical(parent, "Erro no Download", f"Falha ao baixar atualização:\n\n{error_msg}")
@@ -434,31 +402,22 @@ def perform_update(parent, download_url):
 
 
 def install_update(temp_file, progress_dialog):
+    """Instala a atualização baixada"""
     try:
         current_exe = sys.executable
         exe_dir = os.path.dirname(current_exe)
         exe_name = os.path.basename(current_exe)
         exe_name_no_ext = os.path.splitext(exe_name)[0]
         
-        # Nome do arquivo antigo (backup temporário)
         old_exe_backup = os.path.join(exe_dir, f"{exe_name_no_ext}_old.exe")
         
-        # Criar script batch mais robusto que:
-        # 1. Aguarda o processo atual terminar completamente
-        # 2. Renomeia o executável antigo para backup
-        # 3. Move o novo executável para o local correto
-        # 4. Remove o backup antigo
-        # 5. Inicia o novo executável
-        batch_script = f"""@echo off
+        # Criar script batch
+        batch_script = f'''@echo off
 setlocal enabledelayedexpansion
 
-REM Aguardar um pouco para garantir que o processo atual começou a fechar
 timeout /t 3 /nobreak >nul
-
-REM Tentar fechar o processo atual se ainda estiver rodando
 taskkill /F /IM "{exe_name}" >nul 2>&1
 
-REM Aguardar o processo terminar completamente
 :wait_loop
 tasklist /FI "IMAGENAME eq {exe_name}" 2>NUL | find /I /N "{exe_name}">NUL
 if "%ERRORLEVEL%"=="0" (
@@ -466,24 +425,33 @@ if "%ERRORLEVEL%"=="0" (
     goto wait_loop
 )
 
-REM Aguardar mais um pouco para garantir que todos os arquivos foram liberados
 timeout /t 2 /nobreak >nul
 
-REM Se o executável antigo já existe como backup, removê-lo
 if exist "{old_exe_backup}" (
     del /F /Q "{old_exe_backup}" >nul 2>&1
 )
 
-REM Renomear o executável atual para backup (se existir)
 if exist "{current_exe}" (
     ren "{current_exe}" "{os.path.basename(old_exe_backup)}" >nul 2>&1
 )
 
+copy /Y "{temp_file}" "{current_exe}" >nul 2>&1
+
+if exist "{old_exe_backup}" (
+    del /F /Q "{old_exe_backup}" >nul 2>&1
+)
+
+start "" "{current_exe}"
+del /F /Q "{temp_file}" >nul 2>&1
+exit
+'''
         
-        # Aguardar um pouco para garantir que o diálogo fechou
+        batch_file = os.path.join(tempfile.gettempdir(), "update_gamesstore.bat")
+        with open(batch_file, 'w') as f:
+            f.write(batch_script)
+        
         time.sleep(0.5)
         
-        # Fechar todas as janelas antes de sair
         try:
             from PyQt5.QtWidgets import QApplication
             app = QApplication.instance()
@@ -497,12 +465,10 @@ if exist "{current_exe}" (
         except:
             pass
         
-        # Aguardar um pouco mais para garantir que tudo foi fechado
         time.sleep(0.5)
         
-        # Executar o batch
-        log("Executando script de atualização...")
-        process = subprocess.Popen(
+        log("Executando script de atualizacao...")
+        subprocess.Popen(
             batch_file, 
             shell=True, 
             creationflags=subprocess.CREATE_NO_WINDOW,
@@ -510,23 +476,18 @@ if exist "{current_exe}" (
             stderr=subprocess.DEVNULL
         )
         
-        # Aguardar um pouco para garantir que o processo foi iniciado
         time.sleep(1.0)
         
-        # Sair do programa
-        log("Fechando aplicativo para atualização...")
+        log("Fechando aplicativo para atualizacao...")
         sys.exit(0)
         
     except Exception as e:
-        log(f"ERRO ao instalar atualização: {e}")
-        import traceback
-        log(f"Traceback: {traceback.format_exc()}")
-        # Se houver erro, tentar ao menos notificar
+        log(f"ERRO ao instalar atualizacao: {e}")
         try:
             QMessageBox.critical(
                 progress_dialog.parent() if progress_dialog else None, 
-                "Erro na Instalação", 
-                f"Erro ao instalar atualização:\n{e}\n\nO arquivo foi baixado em:\n{temp_file}\n\nVocê pode fechar este aplicativo e substituir manualmente o executável."
+                "Erro na Instalacao", 
+                f"Erro ao instalar atualizacao:\n{e}\n\nO arquivo foi baixado em:\n{temp_file}"
             )
         except:
             pass
@@ -543,9 +504,8 @@ def check_and_update(parent, show_no_update_message=False, check_beta=False):
     """
     current_version = get_current_version()
     
-    # Se a versão atual é -old, verificar atualizações beta primeiro
     if check_beta or "-old" in current_version.lower():
-        log("🔍 Versão OLD detectada - verificando atualizações beta...")
+        log("Versão OLD detectada - verificando atualizações beta...")
         has_update, latest_version, download_url, release_notes = check_for_beta_updates()
         
         if has_update:
@@ -553,7 +513,6 @@ def check_and_update(parent, show_no_update_message=False, check_beta=False):
             dialog.exec_()
             return perform_update(parent, download_url)
     
-    # Verificar atualizações estáveis normais
     has_update, latest_version, download_url, release_notes = check_for_updates()
     
     if not has_update:
