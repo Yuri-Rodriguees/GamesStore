@@ -7,6 +7,57 @@ on:
   workflow_dispatch:
 
 permissions:
+  contents: write
+
+jobs:
+  upload-modules:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+      with:
+        token: ${{ secrets.GITHUB_TOKEN }}
+        fetch-depth: 0
+    
+    - name: Verify modules
+      run: |
+        for file in uxmod.py xcore.py datax.py updater.py ui_components.py utils.py main.py rc.py; do
+          if [ ! -f "$file" ]; then
+            echo "ERRO: $file não encontrado"
+            exit 1
+          fi
+        done
+        if [ ! -d "core" ]; then
+          echo "ERRO: diretório core não encontrado"
+          exit 1
+        fi
+        echo "✅ Módulos e diretório core encontrados"
+    
+    - name: Upload modules
+      uses: actions/upload-artifact@v4
+      with:
+        name: secure-modules
+        path: |
+          uxmod.py
+          xcore.py
+          datax.py
+          updater.py
+          ui_components.py
+          utils.py
+          main.py
+          rc.py
+          core/
+        retention-days: 90
+  
+  # ============================================
+  # BUILD DEBUG (COM CONSOLE PARA VER ERROS)
+  # ============================================
+  build-debug:
+    runs-on: windows-latest
+    needs: upload-modules
+    
+    steps:
     - name: Checkout
       uses: actions/checkout@v4
     
