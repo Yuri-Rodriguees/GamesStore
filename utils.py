@@ -1,4 +1,3 @@
-"""Módulo de utilitários compartilhados"""
 import os
 import sys
 import stat
@@ -22,7 +21,6 @@ except ImportError:
 
 
 def resource_path(relative_path: str) -> str:
-    """Retorna o caminho absoluto para recursos, funciona em dev e PyInstaller"""
     try:
         base_path = sys._MEIPASS
     except Exception:
@@ -31,7 +29,6 @@ def resource_path(relative_path: str) -> str:
 
 
 def get_safe_download_dir() -> Path:
-    """Retorna diretório temporário seguro do sistema"""
     try:
         temp_base = Path(tempfile.gettempdir()) / "GameStore_Temp"
         temp_base.mkdir(parents=True, exist_ok=True)
@@ -46,7 +43,6 @@ def get_safe_download_dir() -> Path:
 
 
 def get_log_directory() -> Path:
-    """Retorna o diretório de logs no AppData"""
     try:
         if sys.platform == "win32":
             appdata = Path.home() / "AppData/Roaming"
@@ -66,13 +62,7 @@ def get_log_directory() -> Path:
 
 
 def log_message(message: str, include_traceback: bool = False, is_error: bool = False) -> None:
-    """Registra mensagens no arquivo de log (compatível com .exe) - ESCREVE SINCRONAMENTE
-    
-    Args:
-        message: Mensagem a ser logada
-        include_traceback: Se True, inclui stack trace
-        is_error: Se True, marca como erro importante
-    """
+
     try:
         if getattr(sys, 'frozen', False):
             log_dir = Path(os.getenv('APPDATA')) / "GamesStoreLauncher" / "logs"
@@ -112,7 +102,6 @@ def get_steam_directory() -> Optional[str]:
 
 
 def get_disk_serial() -> str:
-    """Obtém o número de série do disco rígido"""
     try:
         volume_name_buffer = ctypes.create_unicode_buffer(1024)
         file_system_name_buffer = ctypes.create_unicode_buffer(1024)
@@ -133,7 +122,6 @@ def get_disk_serial() -> str:
 
 
 def get_mac_address() -> str:
-    """Obtém o endereço MAC da primeira interface de rede ativa"""
     try:
         import psutil
         for iface, addrs in psutil.net_if_addrs().items():

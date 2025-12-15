@@ -1,4 +1,3 @@
-"""Componentes de UI reutilizáveis - Design Moderno e Minimalista"""
 from PyQt5.QtCore import Qt, pyqtProperty, pyqtSignal, QPropertyAnimation, QRectF, QEasingCurve
 from PyQt5.QtGui import QFont, QIcon, QColor, QPen, QPainter, QPainterPath, QLinearGradient
 from PyQt5.QtWidgets import (
@@ -6,17 +5,12 @@ from PyQt5.QtWidgets import (
     QWidget, QGraphicsDropShadowEffect, QSizePolicy
 )
 
-
-# =============================================================================
-# PALETA DE CORES MODERNA
-# =============================================================================
 class Colors:
-    """Cores do tema moderno"""
-    PRIMARY = "#47D64E"  # Verde principal
+    PRIMARY = "#47D64E"
     PRIMARY_DARK = "#3AAE42"
     PRIMARY_LIGHT = "#5CE36C"
     
-    BG_DARK = "#0D0D0D"  # Fundo mais escuro
+    BG_DARK = "#0D0D0D"
     BG_MEDIUM = "#141414"
     BG_LIGHT = "#1A1A1A"
     BG_CARD = "#1E1E1E"
@@ -35,7 +29,6 @@ class Colors:
 
 
 class TitleBar(QFrame):
-    """Barra de título moderna e minimalista"""
     
     def __init__(self, parent):
         super().__init__(parent)
@@ -67,7 +60,6 @@ class TitleBar(QFrame):
         layout.addWidget(logo_container)
         layout.addStretch()
         
-        # Botões de controle da janela
         btn_style = """
             QPushButton {{
                 background: transparent;
@@ -82,7 +74,6 @@ class TitleBar(QFrame):
             }}
         """
         
-        # Minimizar
         self.btn_minimize = QPushButton("─")
         self.btn_minimize.setFixedSize(36, 28)
         self.btn_minimize.setCursor(Qt.PointingHandCursor)
@@ -93,7 +84,6 @@ class TitleBar(QFrame):
         self.btn_minimize.clicked.connect(parent.showMinimized)
         self.btn_minimize.setFocusPolicy(Qt.NoFocus)
         
-        # Fechar
         self.btn_close = QPushButton("✕")
         self.btn_close.setFixedSize(36, 28)
         self.btn_close.setCursor(Qt.PointingHandCursor)
@@ -119,7 +109,6 @@ class TitleBar(QFrame):
 
 
 class CircularProgressBar(QWidget):
-    """Barra de progresso circular moderna com design glassmorphism"""
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -132,17 +121,14 @@ class CircularProgressBar(QWidget):
         self.progress_width = 8
         self.progress_rounded_cap = True
         
-        # Cores do gradiente
         self.progress_color_start = QColor(71, 214, 78)  # Verde claro
         self.progress_color_end = QColor(46, 204, 113)   # Verde escuro
         self.bg_color = QColor(30, 30, 30)
         self.text_color = QColor(255, 255, 255)
         
-        # Fontes modernas
         self.font_percent = QFont("Segoe UI", 22, QFont.Bold)
         self.font_speed = QFont("Segoe UI", 9)
         
-        # Sombra suave
         self.shadow_effect = QGraphicsDropShadowEffect(self)
         self.shadow_effect.setBlurRadius(30)
         self.shadow_effect.setXOffset(0)
@@ -187,7 +173,6 @@ class CircularProgressBar(QWidget):
             side - 8, side - 8
         )
         
-        # Gradiente do fundo
         bg_gradient = QLinearGradient(bg_rect.topLeft(), bg_rect.bottomRight())
         bg_gradient.setColorAt(0, QColor(35, 35, 35))
         bg_gradient.setColorAt(1, QColor(25, 25, 25))
@@ -196,7 +181,6 @@ class CircularProgressBar(QWidget):
         painter.setBrush(bg_gradient)
         painter.drawEllipse(bg_rect)
         
-        # Trilha do progresso (fundo)
         track_rect = bg_rect.adjusted(
             self.progress_width, self.progress_width,
             -self.progress_width, -self.progress_width
@@ -205,7 +189,6 @@ class CircularProgressBar(QWidget):
         painter.setBrush(Qt.NoBrush)
         painter.drawEllipse(track_rect)
         
-        # Progresso com gradiente
         if self._value > 0:
             progress_gradient = QLinearGradient(track_rect.topLeft(), track_rect.bottomRight())
             progress_gradient.setColorAt(0, self.progress_color_start)
@@ -220,14 +203,12 @@ class CircularProgressBar(QWidget):
             span_angle = -int(self._value * 3.6 * 16)
             painter.drawArc(track_rect, start_angle, span_angle)
         
-        # Texto - Porcentagem (centralizado)
         painter.setFont(self.font_percent)
         painter.setPen(self.text_color)
         percent_text = f"{self._value}%"
         percent_rect = QRectF(0, side * 0.35, side, side * 0.25)
         painter.drawText(percent_rect, Qt.AlignCenter, percent_text)
         
-        # Texto - Velocidade
         if self._speed > 0:
             painter.setFont(self.font_speed)
             painter.setPen(QColor(150, 150, 150))
@@ -244,7 +225,6 @@ class CircularProgressBar(QWidget):
 
 
 class ModernButton(QPushButton):
-    """Botão moderno com efeitos de hover e animações"""
     
     def __init__(self, text, primary=True, parent=None):
         super().__init__(text, parent)
@@ -292,7 +272,6 @@ class ModernButton(QPushButton):
                 }}
             """)
         
-        # Sombra suave
         if primary:
             shadow = QGraphicsDropShadowEffect(self)
             shadow.setBlurRadius(20)
@@ -303,7 +282,6 @@ class ModernButton(QPushButton):
 
 
 class GameCard(QFrame):
-    """Card de jogo moderno com efeitos de hover elegantes"""
     clicked = pyqtSignal(str, str)  # game_id, game_name
     
     def __init__(self, game_name, game_id, parent=None):
@@ -317,7 +295,6 @@ class GameCard(QFrame):
         self._setup_style()
         self._setup_ui()
         
-        # Sombra suave
         shadow = QGraphicsDropShadowEffect(self)
         shadow.setBlurRadius(20)
         shadow.setXOffset(0)
@@ -343,7 +320,6 @@ class GameCard(QFrame):
         layout.setContentsMargins(8, 8, 8, 12)
         layout.setSpacing(0)
         
-        # Container da imagem
         self.image_container = QFrame()
         self.image_container.setFixedSize(164, 200)
         self.image_container.setStyleSheet(f"""
@@ -357,7 +333,6 @@ class GameCard(QFrame):
             }}
         """)
         
-        # Imagem/Poster
         self.image_label = QLabel(self.image_container)
         self.image_label.setFixedSize(164, 200)
         self.image_label.setAlignment(Qt.AlignCenter)
@@ -371,7 +346,6 @@ class GameCard(QFrame):
             }}
         """)
         
-        # Nome do jogo
         self.name_label = QLabel(self.game_name)
         self.name_label.setFont(QFont("Segoe UI", 10, QFont.DemiBold))
         self.name_label.setAlignment(Qt.AlignCenter)
@@ -389,7 +363,6 @@ class GameCard(QFrame):
         layout.addWidget(self.name_label)
     
     def set_image(self, pixmap):
-        """Define a imagem do card"""
         if pixmap and not pixmap.isNull():
             scaled = pixmap.scaled(164, 200, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
             self.image_label.setPixmap(scaled)
@@ -401,8 +374,6 @@ class GameCard(QFrame):
 
 
 class SidebarButton(QPushButton):
-    """Botão da sidebar com indicador de ativo"""
-    
     def __init__(self, icon, text, parent=None):
         super().__init__(f"  {icon}  {text}", parent)
         self._active = False
