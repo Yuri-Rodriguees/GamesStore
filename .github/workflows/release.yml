@@ -7,19 +7,6 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-
-jobs:
-  upload-modules:
-    runs-on: ubuntu-latest
-    
-    steps:
-  # ============================================
-  build-debug:
-    runs-on: windows-latest
-    needs: upload-modules
-    
-    steps:
     - name: Checkout
       uses: actions/checkout@v4
     
