@@ -17,6 +17,8 @@ def log(msg):
 
 def is_frozen():
     """Verifica se está rodando como .exe compilado"""
+    if "--test-update" in sys.argv:
+        return True
     return getattr(sys, 'frozen', False)
 
 def get_current_version():
@@ -403,6 +405,14 @@ def perform_update(parent, download_url):
 
 def install_update(temp_file, progress_dialog):
     """Instala a atualização baixada"""
+    if "--test-update" in sys.argv:
+        log("MODO DE TESTE: Simulando instalação...")
+        if progress_dialog:
+             progress_dialog.status_label.setText("Teste: Atualização simulada!")
+             progress_dialog.progress_bar.setValue(100)
+             QMessageBox.information(progress_dialog, "Teste", f"Atualização baixada com sucesso em:\n{temp_file}\n\n(Em modo de teste, o arquivo não é substituído)")
+        return
+
     try:
         current_exe = sys.executable
         exe_dir = os.path.dirname(current_exe)

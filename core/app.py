@@ -80,6 +80,10 @@ class GameApp(QWidget):
         self.init_ui()
         
         QTimer.singleShot(0, self.get_steam_directory)
+        
+        # Verificar atualizações
+        from updater import check_and_update
+        QTimer.singleShot(2000, lambda: check_and_update(self))
     
     # ========================================================================
     # SEÇÃO 1: INTERFACE DO USUÁRIO (UI)
