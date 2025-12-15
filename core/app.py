@@ -147,7 +147,7 @@ class GameApp(QWidget):
         self.btn_home = self.create_menu_button("🏠", "Home", 0)
         self.btn_games = self.create_menu_button("🎮", "Meus Jogos", 1)
         self.btn_dlcs = self.create_menu_button("📦", "DLCs", 2)
-        self.btn_config = self.create_menu_button("⚙", "Configuracoes", 3)
+        self.btn_config = self.create_menu_button("⚙", "Configuracões", 3)
         
         layout.addWidget(self.btn_home)
         layout.addWidget(self.btn_games)
@@ -827,14 +827,14 @@ class GameApp(QWidget):
         layout.setSpacing(0)
         
         # Header
-        title = QLabel("Configuracoes")
+        title = QLabel("Configuracões")
         title.setFont(QFont("", 22))
         title.setStyleSheet("color: white;")
         layout.addWidget(title)
         
         layout.addSpacing(8)
         
-        subtitle = QLabel("Gerencie as configuracoes do aplicativo")
+        subtitle = QLabel("Gerencie as configuracões do aplicativo")
         subtitle.setFont(QFont("", 11))
         subtitle.setStyleSheet("color: #666666;")
         layout.addWidget(subtitle)
@@ -857,12 +857,12 @@ class GameApp(QWidget):
         layout.addSpacing(24)
         
         # Status items
-        self.status_hid = self.create_status_row("hid.dll")
+        self.status_hid = self.create_status_row("Driver de Controle")
         layout.addWidget(self.status_hid)
         
         layout.addSpacing(12)
         
-        self.status_cef = self.create_status_row(".cef-dev-tools-size.vdf")
+        self.status_cef = self.create_status_row("Configuração de Componentes")
         layout.addWidget(self.status_cef)
         
         layout.addSpacing(32)
