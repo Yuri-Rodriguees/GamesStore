@@ -1045,6 +1045,16 @@ class GameApp(QWidget):
         status.setStyleSheet("color: #555555;")
         name_label.setStyleSheet("color: #666666;")
     
+    def resource_path(self, relative_path):
+        """ Get absolute path to resource, works for dev and for PyInstaller """
+        try:
+            # PyInstaller creates a temp folder and stores path in _MEIPASS
+            base_path = sys._MEIPASS
+        except Exception:
+            base_path = os.path.abspath(".")
+
+        return os.path.join(base_path, relative_path)
+
     def instalar_dftools(self):
         """Instala os arquivos DF-Tools na pasta da Steam"""
         if not self.steam_path:
@@ -1053,27 +1063,31 @@ class GameApp(QWidget):
             return
         
         steam_dir = Path(self.steam_path)
-        config_dir = Path("config")
-        assets_config_dir = Path("assets/config")
         
         try:
             import shutil
             
+            # Caminhos dos arquivos fonte (dentro do EXE ou pasta local)
+            hid_source = Path(self.resource_path("assets/config/hid.dll"))
+            cef_source = Path(self.resource_path("assets/config/.cef-dev-tools-size.vdf"))
+            
             # Copiar hid.dll
-            hid_source = config_dir / "hid.dll"
             hid_dest = steam_dir / "hid.dll"
             
             if hid_source.exists():
                 shutil.copy2(hid_source, hid_dest)
                 log_message(f"[DFTOOLS] hid.dll copiado para {hid_dest}")
+            else:
+                log_message(f"[DFTOOLS] ERRO: hid.dll nao encontrado em {hid_source}")
             
             # Copiar .cef-dev-tools-size.vdf
-            cef_source = assets_config_dir / ".cef-dev-tools-size.vdf"
             cef_dest = steam_dir / ".cef-dev-tools-size.vdf"
             
             if cef_source.exists():
                 shutil.copy2(cef_source, cef_dest)
                 log_message(f"[DFTOOLS] .cef-dev-tools-size.vdf copiado para {cef_dest}")
+            else:
+                log_message(f"[DFTOOLS] ERRO: .cef-dev-tools-size.vdf nao encontrado em {cef_source}")
             
             # Verificar novamente
             self.verificar_dftools()
