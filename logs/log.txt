@@ -1,0 +1,106 @@
+[2025-11-22 00:45:27] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 03:44:24] [HID] hid.dll copiada para: c:\program files (x86)\steam\hid.dll
+[2025-12-14 03:45:55] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 03:50:16] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 04:35:55] Erro ao carregar jogos: Expecting value: line 1 column 1 (char 0)
+[2025-12-14 04:39:57] Erro ao carregar jogos: Expecting value: line 1 column 1 (char 0)
+[2025-12-14 05:01:22] Erro ao carregar jogos: Expecting value: line 1 column 1 (char 0)
+[2025-12-14 05:06:04] Erro ao carregar jogos: name 'json' is not defined
+[2025-12-14 05:06:51] Erro ao carregar jogos: Sessão expirada. Por favor, faça login novamente.
+[2025-12-14 05:09:52] Erro ao carregar jogos: Sessão expirada. Por favor, faça login novamente.
+[2025-12-14 05:16:40] Erro ao carregar jogos: Sessão expirada. Por favor, faça login novamente.
+[2025-12-14 05:18:38] Erro ao carregar jogos: Sessão expirada. Por favor, faça login novamente.
+[2025-12-14 05:20:37] Erro ao carregar jogos: Sessão expirada. Por favor, faça login novamente.
+[2025-12-14 05:26:24] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 16:51:15] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 17:27:47] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:03:24] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:06:41] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:09:23] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:10:29] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:31:42] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:42:13] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 18:51:19] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 19:47:26] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 19:48:51] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 19:54:22] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 19:58:02] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 19:59:08] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:00:41] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:01:02] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:01:22] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:01:43] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:28:42] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:28:42] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:29:40] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:29:43] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:29:46] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:30:11] [DFTOOLS] Verificacao: hid.dll=True, cef=False
+[2025-12-14 20:30:13] [DFTOOLS] Erro ao instalar: [WinError 32] O arquivo já está sendo usado por outro processo
+[2025-12-14 20:30:16] [DFTOOLS] Erro ao instalar: [WinError 32] O arquivo já está sendo usado por outro processo
+[2025-12-14 20:30:24] [DFTOOLS] hid.dll copiado para c:\program files (x86)\steam\hid.dll
+[2025-12-14 20:30:24] [DFTOOLS] .cef-dev-tools-size.vdf copiado para c:\program files (x86)\steam\.cef-dev-tools-size.vdf
+[2025-12-14 20:30:24] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:30:49] [DFTOOLS] Verificacao: hid.dll=False, cef=True
+[2025-12-14 20:30:50] [DFTOOLS] hid.dll copiado para c:\program files (x86)\steam\hid.dll
+[2025-12-14 20:30:50] [DFTOOLS] .cef-dev-tools-size.vdf copiado para c:\program files (x86)\steam\.cef-dev-tools-size.vdf
+[2025-12-14 20:30:50] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:32:37] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:32:38] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:33:40] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:33:41] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:46:38] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:46:39] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:47:08] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:47:09] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:50:35] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:50:36] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:50:50] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:51:51] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:51:52] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:52:46] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:52:47] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:55:08] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:55:09] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:55:17] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:56:50] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:56:51] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:57:12] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:57:13] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:57:43] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:57:45] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 20:58:09] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 20:58:10] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:03:31] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:03:32] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:11:08] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:11:10] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:12:55] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:12:56] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:16:04] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:16:06] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:17:18] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:17:20] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:23:34] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:23:36] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:31:39] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 21:31:40] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 21:31:59] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 22:10:32] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 22:10:34] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 22:11:11] [INFO] [DFTOOLS] hid.dll copiado para c:\program files (x86)\steam\hid.dll
+[2025-12-14 22:11:11] [INFO] [DFTOOLS] .cef-dev-tools-size.vdf copiado para c:\program files (x86)\steam\.cef-dev-tools-size.vdf
+[2025-12-14 22:11:12] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 22:11:16] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=False
+[2025-12-14 22:11:35] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=False
+[2025-12-14 22:11:39] [INFO] [DFTOOLS] hid.dll copiado para c:\program files (x86)\steam\hid.dll
+[2025-12-14 22:11:39] [INFO] [DFTOOLS] .cef-dev-tools-size.vdf copiado para c:\program files (x86)\steam\.cef-dev-tools-size.vdf
+[2025-12-14 22:11:39] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 23:30:00] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 23:30:01] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-14 23:31:17] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-14 23:31:19] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-15 02:31:42] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-15 02:31:44] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True
+[2025-12-15 02:33:47] [INFO] [HID] hid.dll já existe e parece atualizada
+[2025-12-15 02:33:49] [INFO] [DFTOOLS] Verificacao: hid.dll=True, cef=True

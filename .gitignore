@@ -1,0 +1,21 @@
+# Ignorar fontes Python
+*.py
+!main.py
+!setup.py
+!version.py
+
+# Ignorar artefatos de build locais
+__pycache__/
+*.spec
+build/
+dist/
+*.user
+*.log
+venv/
+.vscode/
+.idea/
+
+# Manter binários compilados
+!*.pyd
+!*.dll
+!*.so
