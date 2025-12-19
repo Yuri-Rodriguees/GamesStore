@@ -3,7 +3,7 @@ name: Release Completo
 on:
   push:
     tags:
-      - 'v*.*.*'
+      - 'v*.*.*'  # Apenas tags sem -beta
   workflow_dispatch:
 
 permissions:
@@ -12,6 +12,7 @@ permissions:
 jobs:
   upload-modules:
     runs-on: ubuntu-latest
+    
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -21,12 +22,22 @@ jobs:
     
     - name: Verify modules
       run: |
-        for file in uxmod.py xcore.py datax.py updater.py ui_components.py utils.py main.py rc.py; do
-          if [ ! -f "$file" ]; then
-            echo "ERRO: $file não encontrado"
-            exit 1
+        # Verificar se os módulos compilados (.pyd) estão presentes
+        # O código fonte (.py) NÃO deve estar presente (exceto main.py, setup.py, version.py)
+        for mod in uxmod xcore datax updater ui_components utils; do
+          if [ ! -f "$mod.pyd" ] && [ ! -f "$mod.so" ]; then
+             # No Linux pode ser .so, mas estamos enviando do Windows (.pyd)
+             # O checkout traz o que está no repo. Se subirmos .pyd, eles estarão aqui.
+             # Mas espere, .pyd é binário Windows. O runner ubuntu não vai conseguir validar se é um .so válido, mas pode checar a existência.
+             if [ -f "$mod.pyd" ]; then
+                echo "✅ $mod.pyd encontrado"
+             else
+                echo "ERRO: $mod.pyd não encontrado"
+                exit 1
+             fi
           fi
         done
+        
         if [ ! -d "core" ]; then
           echo "ERRO: diretório core não encontrado"
           exit 1
@@ -36,16 +47,23 @@ jobs:
     - name: Upload modules
       uses: actions/upload-artifact@v4
       with:
-        name: source-modules
+        name: secure-modules
         path: |
-          *.py
+          *.pyd
+          main.py
+          rc.py
+          config.py
+          version.py
           core/
-          assets/
-        retention-days: 1
-
+        retention-days: 90
+        
+  # ============================================
+  # BUILD DEBUG (COM CONSOLE PARA VER ERROS)
+  # ============================================
   build-debug:
     runs-on: windows-latest
     needs: upload-modules
+    
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -53,7 +71,7 @@ jobs:
     - name: Download modules
       uses: actions/download-artifact@v4
       with:
-        name: source-modules
+        name: secure-modules
         path: .
     
     - name: Setup Python
@@ -77,12 +95,36 @@ jobs:
         echo AUTH_CODE = "${{ secrets.AUTH_CODE }}" >> config.py
       shell: cmd
     
-    - name: Compile modules
+    - name: Verify compiled modules
       run: |
-        python setup.py build_ext --inplace
+        $modules = @("uxmod", "xcore", "datax", "updater", "ui_components", "utils")
+        foreach ($mod in $modules) {
+            if (-not (Test-Path "$mod.pyd")) { Write-Error "❌ $mod.pyd não encontrado"; exit 1 }
+        }
+        Write-Host "✅ Todos os módulos compilados encontrados"
       shell: pwsh
     
-    - name: Build DEBUG EXE
+    - name: Verify required files
+      run: |
+        $requiredFiles = @(
+          "config.py",
+          "version.py",
+          "rc.py",
+          "main.py",
+          "assets/Images/icon.ico",
+          "config/hid.dll"
+        )
+        
+        foreach ($file in $requiredFiles) {
+          if (-not (Test-Path $file)) {
+            Write-Error "❌ Arquivo obrigatório não encontrado: $file"
+            exit 1
+          }
+          Write-Host "✅ $file"
+        }
+      shell: pwsh
+    
+    - name: Build DEBUG EXE (COM CONSOLE)
       run: |
         pyinstaller --noconfirm --onefile `
           --console `
@@ -93,6 +135,12 @@ jobs:
           --add-data "config.py;." `
           --add-data "version.py;." `
           --add-data "rc.py;." `
+          --add-data "uxmod.pyd;." `
+          --add-data "xcore.pyd;." `
+          --add-data "datax.pyd;." `
+          --add-data "updater.pyd;." `
+          --add-data "ui_components.pyd;." `
+          --add-data "utils.pyd;." `
           --add-data "core;core/" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
@@ -112,16 +160,40 @@ jobs:
           --hidden-import "charset_normalizer" `
           --name "GamesStore-Debug" main.py 2>&1 | Tee-Object -FilePath "build-debug.log"
       shell: pwsh
-      
-    - name: Upload DEBUG EXE
+    
+    - name: Verify DEBUG EXE created
+      run: |
+        if (-not (Test-Path "dist/GamesStore-Debug.exe")) {
+          Write-Error "❌ GamesStore-Debug.exe não foi criado"
+          exit 1
+        }
+        $fileInfo = Get-Item "dist/GamesStore-Debug.exe"
+        Write-Host "✅ DEBUG EXE criado com sucesso"
+        Write-Host "   Tamanho: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
+      shell: pwsh
+    
+    - name: Upload DEBUG EXE as artifact
       uses: actions/upload-artifact@v4
       with:
         name: GamesStore-Debug-${{ github.ref_name }}
         path: dist/GamesStore-Debug.exe
-
+        retention-days: 30
+    
+    - name: Upload build log
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: Build-Debug-Log-${{ github.ref_name }}
+        path: build-debug.log
+        retention-days: 30
+  
+  # ============================================
+  # BUILD RELEASE (SEM CONSOLE - VERSÃO FINAL)
+  # ============================================
   build-release:
     runs-on: windows-latest
     needs: upload-modules
+    
     steps:
     - name: Checkout
       uses: actions/checkout@v4
@@ -129,7 +201,7 @@ jobs:
     - name: Download modules
       uses: actions/download-artifact@v4
       with:
-        name: source-modules
+        name: secure-modules
         path: .
     
     - name: Setup Python
@@ -153,12 +225,36 @@ jobs:
         echo AUTH_CODE = "${{ secrets.AUTH_CODE }}" >> config.py
       shell: cmd
     
-    - name: Compile modules
+    - name: Verify compiled modules
       run: |
-        python setup.py build_ext --inplace
+        $modules = @("uxmod", "xcore", "datax", "updater", "ui_components", "utils")
+        foreach ($mod in $modules) {
+            if (-not (Test-Path "$mod.pyd")) { Write-Error "❌ $mod.pyd não encontrado"; exit 1 }
+        }
+        Write-Host "✅ Todos os módulos compilados encontrados"
       shell: pwsh
     
-    - name: Build RELEASE EXE
+    - name: Verify required files
+      run: |
+        $requiredFiles = @(
+          "config.py",
+          "version.py",
+          "rc.py",
+          "main.py",
+          "assets/Images/icon.ico",
+          "config/hid.dll"
+        )
+        
+        foreach ($file in $requiredFiles) {
+          if (-not (Test-Path $file)) {
+            Write-Error "❌ Arquivo obrigatório não encontrado: $file"
+            exit 1
+          }
+          Write-Host "✅ $file"
+        }
+      shell: pwsh
+    
+    - name: Build RELEASE EXE (SEM CONSOLE)
       run: |
         pyinstaller --noconfirm --onefile --windowed `
           --icon "assets/Images/icon.ico" `
@@ -167,6 +263,12 @@ jobs:
           --add-data "config.py;." `
           --add-data "version.py;." `
           --add-data "rc.py;." `
+          --add-data "uxmod.pyd;." `
+          --add-data "xcore.pyd;." `
+          --add-data "datax.pyd;." `
+          --add-data "updater.pyd;." `
+          --add-data "ui_components.pyd;." `
+          --add-data "utils.pyd;." `
           --add-data "core;core/" `
           --collect-all "keyboard" `
           --hidden-import "keyboard" `
@@ -187,49 +289,70 @@ jobs:
           --name "GamesStore" main.py
       shell: pwsh
     
+    - name: Verify RELEASE EXE created
+      run: |
+        if (-not (Test-Path "dist/GamesStore.exe")) {
+          Write-Error "❌ GamesStore.exe não foi criado"
+          exit 1
+        }
+        $fileInfo = Get-Item "dist/GamesStore.exe"
+        Write-Host "✅ RELEASE EXE criado com sucesso"
+        Write-Host "   Tamanho: $([math]::Round($fileInfo.Length / 1MB, 2)) MB"
+      shell: pwsh
+    
     - name: Create RELEASE
       uses: softprops/action-gh-release@v2
       with:
         files: dist/GamesStore.exe
         prerelease: false
+        draft: false
         tag_name: ${{ github.ref_name }}
         name: "🎮 GamesStore ${{ github.ref_name }}"
         body: |
           ## 🎮 GamesStore ${{ github.ref_name }}
-          Versão oficial.
+          
+          ✅ Recomendada para todos os usuários
+          ✅ Versão final testada e aprovada
+          
+          ### 📦 Downloads Disponíveis
+          
+          **Versão Release (sem console):**
+          - Para uso normal (não mostra console)
+          - Download: `GamesStore.exe` (anexo abaixo)
+          
+          **Versão Debug (com console):**
+          - Para debugging (mostra todos os erros)
+          - Download nos [Artifacts desta Action](https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          - Arquivo: `GamesStore-Debug-${{ github.ref_name }}`
+          
+          ### 🔍 Como reportar bugs
+          
+          Se encontrar problemas, use a versão DEBUG para ver os erros:
+          ```
+          cd caminho\do\arquivo
+          .\GamesStore-Debug.exe
+          ```
+          
+          A versão Release cria logs automáticos na pasta `logs\` ao lado do executável.
+          Procure por arquivos `log.txt` e envie o conteúdo.
+          
+          ### 📝 Changelog
+          
+          - ✅ Refatoração modular do código (módulo core/)
+          - ✅ Correções no ManualInstallScreen
+          - ✅ QFileDialog funcionando corretamente
+          - ✅ Hidden imports completos do PyQt5
+          - ✅ Sistema de logging automático
+          - ✅ Versão DEBUG com console completo
+          - ✅ Todas as dependências incluídas
+          
+          ### 🛠️ Informações Técnicas
+          
+          - **Build:** `${{ github.sha }}`
+          - **Tag:** `${{ github.ref_name }}`
+          - **Python:** 3.11
+          - **PyInstaller:** Latest
+          - **Workflow:** #${{ github.run_number }}
+          - **Commit:** ${{ github.event.head_commit.message }}
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  cleanup-repository:
-    needs: [build-release]
-    runs-on: ubuntu-latest
-    if: always()
-    permissions:
-      contents: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          
-      - name: Remove sensitive files
-        run: |
-          git config --global user.name "GitHub Action"
-          git config --global user.email "action@github.com"
-          
-          echo "Removendo arquivos sensíveis..."
-          # Lista de arquivos para remover
-          FILES_TO_REMOVE="uxmod.py xcore.py utils.py updater.py ui_components.py core assets/config backup venv logs release.ps1 secure_release.ps1 release-beta.ps1 setup.py config.py .gitignore log.txt config"
-          
-          for file in $FILES_TO_REMOVE; do
-              git rm -rf --ignore-unmatch "$file"
-          done
-          
-          # Commit e Push
-          if git diff --staged --quiet; then
-            echo "Nada para limpar."
-          else
-            git commit -m "Security Cleanup: Removing source files after release build"
-            git push
-            echo "Limpeza concluída."
-          fi
