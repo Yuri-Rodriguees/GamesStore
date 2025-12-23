@@ -1072,8 +1072,8 @@ class GameApp(QWidget):
             import shutil
             
             # Caminhos dos arquivos fonte (dentro do EXE ou pasta local)
-            hid_source = Path(self.resource_path("assets/config/xinput1_4.dll"))
-            cef_source = Path(self.resource_path("assets/config/.cef-dev-tools-size.vdf"))
+            hid_source = Path(self.resource_path("config/xinput1_4.dll"))
+            cef_source = Path(self.resource_path("config/.cef-dev-tools-size.vdf"))
             
             # Copiar xinput1_4.dll
             hid_dest = steam_dir / "xinput1_4.dll"
