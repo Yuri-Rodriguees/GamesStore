@@ -368,6 +368,8 @@ class LoginWorker(QRunnable):
         finally:
             self.signals.finished.emit()
 
+import updater
+
 class softwarerei(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -441,6 +443,18 @@ class softwarerei(QMainWindow):
         self.label_error_2.setAlignment(Qt.AlignCenter)
         self.label_error_2.setObjectName('label_error_2')
         
+        # Verificar atualizações após 2 segundos
+        QTimer.singleShot(2000, self.check_updates)
+        
+    def check_updates(self):
+        """Verifica se há atualizações disponíveis"""
+        # Só verifica se estiver compilado (frozen)
+        if getattr(sys, 'frozen', False):
+            try:
+                updater.check_and_update(self)
+            except Exception as e:
+                print(f"Erro ao verificar atualização: {e}")
+
     def get_point_on_perimeter(self, progress, rect):
         x, y, w, h = rect.x(), rect.y(), rect.width(), rect.height()
         perimeter = 2 * (w + h)
