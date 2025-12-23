@@ -112,3 +112,70 @@ class Styles:
             font-weight: bold;
         }
     """
+    
+    # --- Game Details Styles ---
+    
+    details_back_btn = """
+        QPushButton {
+            background: rgba(0, 0, 0, 0.6);
+            color: white;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 18px;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: rgba(71, 214, 78, 0.9);
+            border-color: #47D64E;
+            color: #121212;
+        }
+    """
+    
+    details_download_btn = """
+        QPushButton {
+            background: #47D64E;
+            color: #121212;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+        QPushButton:hover {
+            background: #5ce36c;
+        }
+        QPushButton:pressed {
+            background: #3eb845;
+        }
+        QPushButton:disabled {
+            background: #2a662e;
+            color: #555555;
+        }
+    """
+    
+    details_download_btn_disabled = """
+        QPushButton {
+            background: rgba(255, 255, 255, 0.05);
+            color: #666666;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: bold;
+        }
+    """
+    
+    details_steam_btn = """
+        QPushButton {
+            background: rgba(255, 255, 255, 0.05);
+            color: #888888;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        QPushButton:hover {
+            background: rgba(255, 255, 255, 0.1);
+            color: white;
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+    """

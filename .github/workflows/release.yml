@@ -112,7 +112,7 @@ jobs:
           "rc.py",
           "main.py",
           "assets/Images/icon.ico",
-          "config/hid.dll"
+          "config/xinput1_4.dll"
         )
         
         foreach ($file in $requiredFiles) {
@@ -242,7 +242,7 @@ jobs:
           "rc.py",
           "main.py",
           "assets/Images/icon.ico",
-          "config/hid.dll"
+          "config/xinput1_4.dll"
         )
         
         foreach ($file in $requiredFiles) {

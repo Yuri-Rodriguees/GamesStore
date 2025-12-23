@@ -170,7 +170,7 @@ class LoadingScreen(QWidget):
     def remove_steam_files(self, steam_path):
         required_files = [
             ".cef-dev-tools-size.vdf",
-            "hid.dll"
+            "xinput1_4.dll"
         ]
         
         all_removed = True

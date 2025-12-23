@@ -1026,8 +1026,8 @@ class GameApp(QWidget):
         
         steam_dir = Path(self.steam_path)
         
-        # Verificar hid.dll
-        hid_path = steam_dir / "hid.dll"
+        # Verificar xinput1_4.dll
+        hid_path = steam_dir / "xinput1_4.dll"
         hid_installed = hid_path.exists()
         self.update_status_item(self.status_hid, hid_installed)
         
@@ -1036,7 +1036,7 @@ class GameApp(QWidget):
         cef_installed = cef_path.exists()
         self.update_status_item(self.status_cef, cef_installed)
         
-        log_message(f"[DFTOOLS] Verificacao: hid.dll={hid_installed}, cef={cef_installed}")
+        log_message(f"[DFTOOLS] Verificacao: xinput1_4.dll={hid_installed}, cef={cef_installed}")
     
     def set_status_loading(self, container):
         """Define status como loading"""
@@ -1072,17 +1072,17 @@ class GameApp(QWidget):
             import shutil
             
             # Caminhos dos arquivos fonte (dentro do EXE ou pasta local)
-            hid_source = Path(self.resource_path("assets/config/hid.dll"))
+            hid_source = Path(self.resource_path("assets/config/xinput1_4.dll"))
             cef_source = Path(self.resource_path("assets/config/.cef-dev-tools-size.vdf"))
             
-            # Copiar hid.dll
-            hid_dest = steam_dir / "hid.dll"
+            # Copiar xinput1_4.dll
+            hid_dest = steam_dir / "xinput1_4.dll"
             
             if hid_source.exists():
                 shutil.copy2(hid_source, hid_dest)
-                log_message(f"[DFTOOLS] hid.dll copiado para {hid_dest}")
+                log_message(f"[DFTOOLS] xinput1_4.dll copiado para {hid_dest}")
             else:
-                log_message(f"[DFTOOLS] ERRO: hid.dll nao encontrado em {hid_source}")
+                log_message(f"[DFTOOLS] ERRO: xinput1_4.dll nao encontrado em {hid_source}")
             
             # Copiar .cef-dev-tools-size.vdf
             cef_dest = steam_dir / ".cef-dev-tools-size.vdf"

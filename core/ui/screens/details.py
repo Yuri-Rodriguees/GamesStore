@@ -1,12 +1,13 @@
 """
 Tela de detalhes do jogo - GameDetailsScreen
 """
-from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtCore import Qt, QUrl, QTimer
 from PyQt5.QtGui import QFont, QDesktopServices
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QFrame, QPushButton, QLabel, QScrollArea
 )
 
+from datax import Styles
 from core.workers.image import ImageLoader
 
 
@@ -105,21 +106,7 @@ class GameDetailsScreen(QWidget):
         back_btn.setFixedSize(100, 36)
         back_btn.move(20, 20)
         back_btn.setCursor(Qt.PointingHandCursor)
-        back_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(0, 0, 0, 0.6);
-                color: white;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 18px;
-                font-size: 13px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: rgba(71, 214, 78, 0.9);
-                border-color: #47D64E;
-                color: #121212;
-            }
-        """)
+        back_btn.setStyleSheet(Styles.details_back_btn)
         back_btn.clicked.connect(lambda: self.parent_app.pages.setCurrentIndex(1))
         
         layout.addWidget(header)
@@ -234,57 +221,31 @@ class GameDetailsScreen(QWidget):
         
         if disponivel:
             download_btn.setEnabled(True)
-            download_btn.setStyleSheet("""
-                QPushButton {
-                    background: #47D64E;
-                    color: #121212;
-                    border: none;
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: bold;
-                    letter-spacing: 0.5px;
-                }
-                QPushButton:hover {
-                    background: #5ce36c;
-                }
-                QPushButton:pressed {
-                    background: #3eb845;
-                }
-            """)
-            download_btn.clicked.connect(lambda: self.parent_app.start_download_from_api(game_id, details.get('nome', 'Jogo')))
+            download_btn.setStyleSheet(Styles.details_download_btn)
+            
+            def safe_download_click():
+                """Handler seguro para evitar múltiplos cliques"""
+                download_btn.setEnabled(False)
+                original_text = download_btn.text()
+                download_btn.setText("REQ. DOWNLOAD...")
+                
+                # Executa a ação
+                self.parent_app.start_download_from_api(game_id, details.get('nome', 'Jogo'))
+                
+                # Reabilita após delay de segurança (caso o usuário volte para esta tela ou algo falhe)
+                QTimer.singleShot(3000, lambda: self._reset_download_button(download_btn, original_text))
+                
+            download_btn.clicked.connect(safe_download_click)
         else:
             download_btn.setText("INDISPONÍVEL")
             download_btn.setEnabled(False)
-            download_btn.setStyleSheet("""
-                QPushButton {
-                    background: rgba(255, 255, 255, 0.05);
-                    color: #666666;
-                    border: 1px solid rgba(255, 255, 255, 0.1);
-                    border-radius: 6px;
-                    font-size: 14px;
-                    font-weight: bold;
-                }
-            """)
+            download_btn.setStyleSheet(Styles.details_download_btn_disabled)
             
         # Botão Steam
         steam_btn = QPushButton("Ver na Steam")
         steam_btn.setFixedSize(140, 50)
         steam_btn.setCursor(Qt.PointingHandCursor)
-        steam_btn.setStyleSheet("""
-            QPushButton {
-                background: rgba(255, 255, 255, 0.05);
-                color: #888888;
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 6px;
-                font-size: 14px;
-                font-weight: 600;
-            }
-            QPushButton:hover {
-                background: rgba(255, 255, 255, 0.1);
-                color: white;
-                border-color: rgba(255, 255, 255, 0.3);
-            }
-        """)
+        steam_btn.setStyleSheet(Styles.details_steam_btn)
         steam_btn.clicked.connect(
             lambda: QDesktopServices.openUrl(QUrl(f"https://store.steampowered.com/app/{game_id}"))
         )
@@ -298,3 +259,14 @@ class GameDetailsScreen(QWidget):
         
         scroll.setWidget(content)
         layout.addWidget(scroll, 1)
+
+    def _reset_download_button(self, btn, original_text):
+        """Reseta o estado do botão de download"""
+        try:
+            btn.setEnabled(True)
+            btn.setText(original_text)
+            btn.setStyleSheet(Styles.details_download_btn)
+        except RuntimeError:
+            # Botão já pode ter sido destruído se a tela mudou
+            pass
+
