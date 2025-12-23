@@ -1007,7 +1007,7 @@ class GameApp(QWidget):
             status.setStyleSheet("color: #FF4444;")
             name_label.setStyleSheet("color: #888888;")
     
-    def verificar_dftools(self):
+    def verificar_dftools(self, checked=False):
         """Verifica se os arquivos DF-Tools estao instalados"""
         # Mostrar loading
         self.set_status_loading(self.status_hid)
@@ -1059,7 +1059,7 @@ class GameApp(QWidget):
 
         return os.path.join(base_path, relative_path)
 
-    def instalar_dftools(self):
+    def instalar_dftools(self, checked=False):
         """Instala os arquivos DF-Tools na pasta da Steam"""
         if not self.steam_path:
             from PyQt5.QtWidgets import QMessageBox
