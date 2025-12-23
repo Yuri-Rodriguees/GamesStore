@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   upload-modules:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     
     steps:
     - name: Checkout
@@ -19,59 +19,30 @@ jobs:
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
         fetch-depth: 0
-        
-    - name: Setup Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.11'
-        
-    - name: Install Build Dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install Cython setuptools wheel
-      shell: pwsh
-
-    - name: Compile Modules
-      run: |
-        write-host "Compilando módulos Cython..."
-        python setup.py build_ext --inplace
-        
-        write-host "Listando arquivos gerados:"
-        Get-ChildItem *.pyd | Select-Object Name
-      shell: pwsh
     
-    - name: Rename and Verify modules
+    - name: Verify modules
       run: |
-        $modules = @("uxmod", "xcore", "datax", "updater", "ui_components", "utils")
+        # Verificar se os módulos compilados (.pyd) estão presentes
+        # O código fonte (.py) NÃO deve estar presente (exceto main.py, setup.py, version.py)
+        for mod in uxmod xcore datax updater ui_components utils; do
+          if [ ! -f "$mod.pyd" ] && [ ! -f "$mod.so" ]; then
+             # No Linux pode ser .so, mas estamos enviando do Windows (.pyd)
+             # O checkout traz o que está no repo. Se subirmos .pyd, eles estarão aqui.
+             # Mas espere, .pyd é binário Windows. O runner ubuntu não vai conseguir validar se é um .so válido, mas pode checar a existência.
+             if [ -f "$mod.pyd" ]; then
+                echo "✅ $mod.pyd encontrado"
+             else
+                echo "ERRO: $mod.pyd não encontrado"
+                exit 1
+             fi
+          fi
+        done
         
-        # Renomear arquivos com sufixo (ex: uxmod.cp311-win_amd64.pyd -> uxmod.pyd)
-        foreach ($mod in $modules) {
-           $files = Get-ChildItem "${mod}*.pyd"
-           if ($files) {
-               foreach ($file in $files) {
-                   if ($file.Name -ne "$mod.pyd") {
-                       Write-Host "Renomeando $($file.Name) para $mod.pyd"
-                       Rename-Item -Path $file.FullName -NewName "$mod.pyd" -Force
-                   }
-               }
-           }
-        }
-        
-        # Verificar existência final
-        foreach ($mod in $modules) {
-           if (-not (Test-Path "$mod.pyd")) { 
-               Write-Error "ERRO: $mod.pyd falhou na compilação ou não foi encontrado."
-               exit 1 
-           }
-           Write-Host "✅ $mod.pyd compilado e pronto."
-        }
-        
-        if (-not (Test-Path "core")) {
-          Write-Error "ERRO: diretório core não encontrado"
+        if [ ! -d "core" ]; then
+          echo "ERRO: diretório core não encontrado"
           exit 1
-        }
-        Write-Host "✅ Módulos e diretório core verificados"
-      shell: pwsh
+        fi
+        echo "✅ Módulos e diretório core encontrados"
     
     - name: Upload modules
       uses: actions/upload-artifact@v4
