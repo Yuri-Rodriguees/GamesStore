@@ -35,18 +35,35 @@ jobs:
       run: |
         write-host "Compilando módulos Cython..."
         python setup.py build_ext --inplace
+        
+        write-host "Listando arquivos gerados:"
+        Get-ChildItem *.pyd | Select-Object Name
       shell: pwsh
     
-    - name: Verify modules
+    - name: Rename and Verify modules
       run: |
-        # Verificar se os módulos compilados (.pyd) foram gerados
         $modules = @("uxmod", "xcore", "datax", "updater", "ui_components", "utils")
+        
+        # Renomear arquivos com sufixo (ex: uxmod.cp311-win_amd64.pyd -> uxmod.pyd)
+        foreach ($mod in $modules) {
+           $files = Get-ChildItem "${mod}*.pyd"
+           if ($files) {
+               foreach ($file in $files) {
+                   if ($file.Name -ne "$mod.pyd") {
+                       Write-Host "Renomeando $($file.Name) para $mod.pyd"
+                       Rename-Item -Path $file.FullName -NewName "$mod.pyd" -Force
+                   }
+               }
+           }
+        }
+        
+        # Verificar existência final
         foreach ($mod in $modules) {
            if (-not (Test-Path "$mod.pyd")) { 
-               Write-Error "ERRO: $mod.pyd falhou na compilação"
+               Write-Error "ERRO: $mod.pyd falhou na compilação ou não foi encontrado."
                exit 1 
            }
-           Write-Host "✅ $mod.pyd compilado com sucesso"
+           Write-Host "✅ $mod.pyd compilado e pronto."
         }
         
         if (-not (Test-Path "core")) {
