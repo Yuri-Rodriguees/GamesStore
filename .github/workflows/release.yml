@@ -160,7 +160,7 @@ jobs:
           --log-level=DEBUG `
           --icon "assets/Images/icon.ico" `
           --add-data "config;config/" `
-          --add-data "assets/config;assets/config" `
+          --add-data "assets/Images;assets/Images" `
           --add-data "config.py;." `
           --add-data "version.py;." `
           --add-data "rc.py;." `
@@ -288,7 +288,7 @@ jobs:
         pyinstaller --noconfirm --onefile --windowed `
           --icon "assets/Images/icon.ico" `
           --add-data "config;config/" `
-          --add-data "assets/config;assets/config" `
+          --add-data "assets/Images;assets/Images" `
           --add-data "config.py;." `
           --add-data "version.py;." `
           --add-data "rc.py;." `
