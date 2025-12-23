@@ -100,7 +100,6 @@ htmlcov/
 # ==================== Arquivos Sensíveis (NÃO COMMITAR) ====================
 config.py
 config/
-!config/xinput1_4.dll
 backup/
 *.key
 *.secret
